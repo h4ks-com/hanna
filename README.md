@@ -1,5 +1,7 @@
 # Hanna - IRC Bot with REST API
 
+[![npm version](https://badge.fury.io/js/n8n-nodes-hanna.svg)](https://www.npmjs.com/package/n8n-nodes-hanna)
+
 A robust, self-contained Go IRC bot that connects over TLS and exposes a secure, token-authenticated REST API for remote control. Perfect for automation, monitoring, and integration with other services.
 
 ## 🚀 Features

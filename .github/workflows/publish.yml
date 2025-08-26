@@ -1,0 +1,62 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        registry-url: 'https://registry.npmjs.org'
+        cache: 'npm'
+        cache-dependency-path: 'n8n-nodes-hanna/package-lock.json'
+        
+    - name: Install dependencies
+      run: npm ci
+      working-directory: ./n8n-nodes-hanna
+      
+    - name: Run linter
+      run: npm run lint
+      working-directory: ./n8n-nodes-hanna
+      
+    - name: Run build
+      run: npm run build
+      working-directory: ./n8n-nodes-hanna
+      
+    - name: Run TypeScript check
+      run: npx tsc --noEmit
+      working-directory: ./n8n-nodes-hanna
+      
+    - name: Publish to NPM
+      run: npm publish
+      working-directory: ./n8n-nodes-hanna
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          Release ${{ github.ref_name }}
+          
+          Automated release of n8n-nodes-hanna - n8n community nodes for Hanna IRC Bot integration.
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -584,7 +584,7 @@ func main() {
     log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
     apiToken := os.Getenv("API_TOKEN")
-    apiAddr := getenv("API_ADDR", ":8080")
+    apiAddr := getenv("API_ADDR", ":"+getenv("API_PORT", "8080"))
     apiTLS := boolenv("API_TLS", false)
     apiCert := os.Getenv("API_CERT")
     apiKey := os.Getenv("API_KEY")
