@@ -26,7 +26,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 ### From Source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/h4ks-com/hanna
 cd hanna
 go mod tidy
 go build -o hanna
@@ -473,7 +473,7 @@ Consider extending the bot with Prometheus metrics for comprehensive monitoring.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GPLv3 License - see the LICENSE file for details.
 
 ## 🐛 Troubleshooting
 
