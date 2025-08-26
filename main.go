@@ -4,38 +4,14 @@
 //
 // Features
 // - TLS IRC connection (with optional server password)
-// - Optional SASL PLAIN authentication (set SASL_USER/SASL_PASS)
+// - Optional SASL PLAIN authentication
 // - Auto-reconnect with exponential backoff
 // - Graceful shutdown
 // - Token-protected REST API endpoints for join/part/send/raw/nick/state
 // - Simple channel tracking and PING/PONG handling
+// - N8N webhook integration for chat processing
 //
-// Configuration via environment variables:
-//   IRC_ADDR       : host:port (e.g. "irc.libera.chat:6697")
-//   IRC_TLS        : "1" to enable TLS (default 1)
-//   IRC_TLS_INSECURE: "1" to skip TLS verification (default 0)
-//   IRC_PASS       : optional server password
-//   IRC_NICK       : bot nick (default "goircbot")
-//   IRC_USER       : username/ident (default "goircbot")
-//   IRC_NAME       : realname/gecos (default "Go IRC Bot")
-//   SASL_USER      : SASL PLAIN authcid (optional)
-//   SASL_PASS      : SASL PLAIN password (optional)
-//   API_ADDR       : HTTP listen address (default ":8080")
-//   API_TOKEN      : Bearer token required for API requests
-//   API_TLS        : "1" to enable HTTPS (default 0)
-//   API_CERT       : Path to TLS certificate file (required when API_TLS=1)
-//   API_KEY        : Path to TLS private key file (required when API_TLS=1)
-//   N8N_WEBHOOK    : n8n webhook URL for chat node integration (optional)
-//   AUTOJOIN       : comma-separated channels to autojoin on connect (e.g. "#go,#bots")
-//
-// Build & Run
-//   go mod init ircbot && go mod tidy
-//   go build -o ircbot
-//   API_TOKEN=secret IRC_ADDR=irc.example.net:6697 IRC_NICK=MyBot ./ircbot
-//
-// Example curl
-//   curl -H 'Authorization: Bearer secret' -H 'Content-Type: application/json' \
-//        -d '{"target":"#test","message":"hello from API"}' https://127.0.0.1:8080/api/send
+// Configuration: See .env.example for all environment variables
 //
 package main
 
@@ -656,4 +632,3 @@ func main() {
 
     log.Printf("bye")
 }
-

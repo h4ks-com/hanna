@@ -355,46 +355,58 @@ send_irc_message "#monitoring" "Server load: $LOAD"
 
 ## 🐳 Docker Deployment
 
-### Dockerfile
+### Quick Start with Docker Compose
 
-```dockerfile
-FROM golang:1.21-alpine AS builder
+The easiest way to run Hanna is using Docker Compose with the included configuration:
 
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
+1. **Copy environment template:**
+   ```bash
+   cp .env.example .env
+   ```
 
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o hanna
+2. **Configure your bot:**
+   Edit `.env` and set at least:
+   ```bash
+   IRC_ADDR=irc.libera.chat:6697
+   IRC_NICK=YourBotName
+   API_TOKEN=your-secure-token-here
+   AUTOJOIN=#your-channels
+   ```
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
+3. **Start the services:**
+   ```bash
+   docker compose up -d
+   ```
 
-COPY --from=builder /app/hanna .
+This will start both Hanna IRC bot and n8n for workflow automation. The bot will be available at `http://localhost:8080` and n8n at `http://localhost:5678`.
 
-EXPOSE 8080
-CMD ["./hanna"]
-```
+### Docker Compose Configuration
 
-### Docker Compose
+The included `compose.yaml` provides:
 
-```yaml
-version: '3.8'
+- **Hanna IRC Bot**: Main bot service with API
+- **n8n**: Workflow automation platform for chat processing
+- **Automatic networking**: Bot can communicate with n8n via `http://n8n:5678`
+- **Persistent storage**: n8n workflows and data are preserved
+- **Environment-based config**: All settings from `.env` file
 
-services:
-  hanna:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - API_TOKEN=your_secret_token
-      - IRC_ADDR=irc.libera.chat:6697
-      - IRC_NICK=DockerBot
-      - AUTOJOIN=#general,#bots
-    volumes:
-      - ./certs:/certs:ro  # Mount certificates if using HTTPS
-    restart: unless-stopped
+### Manual Docker Build
+
+If you prefer to build and run manually:
+
+```bash
+# Build the image
+docker build -t hanna-bot .
+
+# Run with environment variables
+docker run -d \
+  --name hanna \
+  -p 8080:8080 \
+  -e API_TOKEN=your_secret_token \
+  -e IRC_ADDR=irc.libera.chat:6697 \
+  -e IRC_NICK=DockerBot \
+  -e AUTOJOIN="#general,#bots" \
+  hanna-bot
 ```
 
 ## 🔧 Systemd Service

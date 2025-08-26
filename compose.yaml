@@ -1,0 +1,32 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_LOG_LEVEL=debug
+      - N8N_PUSH_BACKEND=websocket
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=UTC
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./dist:/home/node/.n8n/custom
+
+  hanna-bot:
+    build: .
+    restart: always
+    ports:
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
+    env_file:
+      - .env
+    environment:
+      - API_ADDR=:${API_PORT:-8080}
+      - N8N_WEBHOOK=${N8N_WEBHOOK:-http://n8n:5678/webhook/irc}
+    depends_on:
+      - n8n
