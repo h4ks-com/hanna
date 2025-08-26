@@ -8,6 +8,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 - **SASL Authentication**: Optional SASL PLAIN authentication for IRC networks that require it
 - **Auto-Reconnect**: Intelligent reconnection with exponential backoff for maximum uptime
 - **REST API**: Token-protected HTTP/HTTPS endpoints for complete bot control
+- **n8n Integration**: Automatic webhook calls when mentioned in IRC channels
 - **Channel Management**: Join, part, and track channels programmatically
 - **Message Control**: Send messages, notices, and raw IRC commands via API
 - **Graceful Shutdown**: Clean disconnection and resource cleanup
@@ -25,7 +26,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 ### From Source
 
 ```bash
-git clone https://github.com/h4ks-com/hanna
+git clone <repository-url>
 cd hanna
 go mod tidy
 go build -o hanna
@@ -69,6 +70,12 @@ All configuration is done via environment variables:
 | `API_TLS` | Enable HTTPS | `0` | ❌ |
 | `API_CERT` | Path to TLS certificate file | - | ⚠️* |
 | `API_KEY` | Path to TLS private key file | - | ⚠️* |
+
+### n8n Integration
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `N8N_WEBHOOK` | n8n webhook URL for chat integration | - | ❌ |
 
 *Required when `API_TLS=1`  
 ⚠️ Highly recommended for security
@@ -215,7 +222,7 @@ Content-Type: application/json
 ```bash
 #!/bin/bash
 
-# Production setup with HTTPS
+# Production setup with HTTPS and n8n integration
 export API_TOKEN="$(openssl rand -hex 32)"
 export API_TLS=1
 export API_CERT="/etc/letsencrypt/live/bot.example.com/fullchain.pem"
@@ -227,9 +234,39 @@ export IRC_NICK="MyAwesomeBot"
 export IRC_USER="mybot"
 export IRC_NAME="My Awesome IRC Bot"
 export AUTOJOIN="#general,#bots"
+export N8N_WEBHOOK="https://n8n.example.com/webhook/irc-bot"
 
 ./hanna
 ```
+
+### n8n Integration
+
+When someone mentions the bot in IRC with `@botname message`, the bot will automatically call the configured n8n webhook with a JSON payload:
+
+```json
+{
+  "sender": "username",
+  "target": "#channel",
+  "message": "hello bot",
+  "fullMessage": "@botname hello bot",
+  "botNick": "MyAwesomeBot",
+  "timestamp": 1692345678
+}
+```
+
+#### Example n8n Workflow Setup
+
+1. Create a new workflow in n8n
+2. Add a "Webhook" trigger node
+3. Set the webhook URL in the `N8N_WEBHOOK` environment variable
+4. Process the incoming IRC data and respond as needed
+5. Optionally use the Hanna API to send responses back to IRC
+
+**Mention Examples:**
+- `@MyAwesomeBot what's the weather?` → Triggers webhook
+- `@MyAwesomeBot help` → Triggers webhook  
+- `MyAwesomeBot hello` → Does NOT trigger (missing @)
+- `@DifferentBot hello` → Does NOT trigger (wrong bot name)
 
 ### Send Message via API
 
@@ -432,11 +469,11 @@ Consider extending the bot with Prometheus metrics for comprehensive monitoring.
 2. Create a feature branch
 3. Make your changes
 4. Add tests if applicable
-5. Sub a pull request
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the GPLv3 License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🐛 Troubleshooting
 
