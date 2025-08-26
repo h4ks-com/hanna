@@ -25,6 +25,7 @@
 //   API_TLS        : "1" to enable HTTPS (default 0)
 //   API_CERT       : Path to TLS certificate file (required when API_TLS=1)
 //   API_KEY        : Path to TLS private key file (required when API_TLS=1)
+//   N8N_WEBHOOK    : n8n webhook URL for chat node integration (optional)
 //   AUTOJOIN       : comma-separated channels to autojoin on connect (e.g. "#go,#bots")
 //
 // Build & Run
@@ -40,6 +41,7 @@ package main
 
 import (
     "bufio"
+    "bytes"
     "context"
     "crypto/tls"
     "encoding/base64"
@@ -90,6 +92,7 @@ type IRCClient struct {
     name          string
     saslUser      string
     saslPass      string
+    n8nWebhook    string
 
     conn   net.Conn
     rw     *bufio.ReadWriter
@@ -112,6 +115,7 @@ func NewIRCClient() *IRCClient {
         name:        getenv("IRC_NAME", "Go IRC Bot"),
         saslUser:    os.Getenv("SASL_USER"),
         saslPass:    os.Getenv("SASL_PASS"),
+        n8nWebhook:  os.Getenv("N8N_WEBHOOK"),
         channels:    make(map[string]struct{}),
     }
     c.nick.Store(getenv("IRC_NICK", "goircbot"))
@@ -313,9 +317,71 @@ func (c *IRCClient) handleLine(line string) {
             log.Printf("Nick changed from %s to %s", c.Nick(), trailing)
             c.setNick(trailing)
         }
+    case "PRIVMSG":
+        // :sender!user@host PRIVMSG target :message
+        log.Printf("PRIVMSG Recv: %s", trailing);
+        if len(args) >= 1 && trailing != "" {
+            sender := strings.Split(prefix, "!")[0]
+            target := args[0]
+            message := trailing
+            
+            // Check if message starts with "@" followed by bot's nick
+            botNick := c.Nick()
+            mention := "@" + botNick
+            if strings.HasPrefix(message, mention) && len(message) > len(mention) && message[len(mention)] == ' ' {
+                // Extract the actual message after the mention
+                actualMessage := strings.TrimSpace(message[len(mention):])
+                log.Printf("Mentioned in %s by %s: %s", target, sender, actualMessage)
+                
+                // Call n8n webhook if configured
+                if c.n8nWebhook != "" {
+                    go c.callN8NWebhook(sender, target, actualMessage, message)
+                }
+            }
+        }
+    }
+}
+
+func (c *IRCClient) callN8NWebhook(sender, target, message, fullMessage string) {
+    type N8NPayload struct {
+        Sender      string `json:"sender"`
+        Target      string `json:"target"`
+        Message     string `json:"message"`
+        ChatInput string `json:"chatInput"`
+        BotNick     string `json:"botNick"`
+        SessionId string `json:"sessionId"`
+        Timestamp   int64  `json:"timestamp"`
     }
 
-    
+    payload := N8NPayload{
+        Sender:      sender,
+        Target:      target,
+        Message:     message,
+        SessionId:  "IRC",
+        ChatInput: fullMessage,
+        BotNick:     c.Nick(),
+        Timestamp:   time.Now().Unix(),
+    }
+
+    jsonData, err := json.Marshal(payload)
+    if err != nil {
+        log.Printf("Error marshaling n8n payload: %v", err)
+        return
+    }
+    log.Printf("Calling webhook: %s", c.n8nWebhook);
+    client := &http.Client{Timeout: 10 * time.Second}
+    resp, err := client.Post(c.n8nWebhook, "application/json", bytes.NewBuffer(jsonData))
+    if err != nil {
+        log.Printf("Error calling n8n webhook: %v", err)
+        return
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+        log.Printf("Successfully called n8n webhook for message from %s", sender)
+    } else {
+        log.Printf("n8n webhook returned status %d", resp.StatusCode)
+    }
 }
 
 func (c *IRCClient) rawf(format string, a ...any) { c.raw(fmt.Sprintf(format, a...)) }
