@@ -25,7 +25,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 ### From Source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/h4ks-com/hanna
 cd hanna
 go mod tidy
 go build -o hanna
