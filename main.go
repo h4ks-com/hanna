@@ -418,7 +418,24 @@ func (c *IRCClient) Part(channel string, reason string) {
         c.rawf("PART %s :%s", channel, reason)
     }
 }
-func (c *IRCClient) Privmsg(target, msg string) { c.rawf("PRIVMSG %s :%s", target, msg) }
+func (c *IRCClient) Privmsg(target, msg string) {
+    // IRC protocol: max message length is 512 bytes including command, prefix, etc.
+    // Safe to use 450 chars for message body
+    const maxMsgLen = 450
+    // Split on newlines first
+    lines := strings.Split(msg, "\n")
+    for _, line := range lines {
+        // Split long lines into chunks
+        for len(line) > 0 {
+            chunk := line
+            if len(chunk) > maxMsgLen {
+                chunk = chunk[:maxMsgLen]
+            }
+            c.rawf("PRIVMSG %s :%s", target, chunk)
+            line = line[len(chunk):]
+        }
+    }
+}
 func (c *IRCClient) Notice(target, msg string) { c.rawf("NOTICE %s :%s", target, msg) }
 func (c *IRCClient) SetNick(n string)           { c.rawf("NICK %s", n) }
 
