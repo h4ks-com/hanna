@@ -341,19 +341,17 @@ func (c *IRCClient) handleLine(line string) {
             target := args[0]
             message := trailing
             
-            // Check if message starts with "@" followed by bot's nick (case-insensitive)
+            // Check if bot's nick appears anywhere in the message (case-insensitive)
             botNick := c.Nick()
-            mention := "@" + botNick
             messageLower := strings.ToLower(message)
-            mentionLower := strings.ToLower(mention)
-            if strings.HasPrefix(messageLower, mentionLower) && len(message) > len(mention) && message[len(mention)] == ' ' {
-                // Extract the actual message after the mention
-                actualMessage := strings.TrimSpace(message[len(mention):])
-                log.Printf("Mentioned in %s by %s: %s", target, sender, actualMessage)
+            botNickLower := strings.ToLower(botNick)
+            
+            if strings.Contains(messageLower, botNickLower) {
+                log.Printf("Nick mentioned in %s by %s: %s", target, sender, message)
                 
                 // Call n8n webhook if configured
                 if c.n8nWebhook != "" {
-                    go c.callN8NWebhook(sender, target, actualMessage, message)
+                    go c.callN8NWebhook(sender, target, message, message)
                 }
             }
         }
