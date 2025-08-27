@@ -78,6 +78,10 @@ type IRCClient struct {
     channelsMu sync.RWMutex
     channels   map[string]struct{}
 
+    // SASL state tracking
+    saslInProgress atomic.Bool
+    saslComplete   chan bool
+
     onReady func()
 }
 
@@ -93,6 +97,7 @@ func NewIRCClient() *IRCClient {
         saslPass:    os.Getenv("SASL_PASS"),
         n8nWebhook:  os.Getenv("N8N_WEBHOOK"),
         channels:    make(map[string]struct{}),
+        saslComplete: make(chan bool, 1),
     }
     c.nick.Store(getenv("IRC_NICK", "goircbot"))
     return c
@@ -132,22 +137,37 @@ func (c *IRCClient) Dial(ctx context.Context) error {
         c.rawf("PASS %s", c.pass)
     }
 
-    // Request SASL if configured
+    // Check if SASL is configured
     sasl := c.saslUser != "" && c.saslPass != ""
     if sasl {
         log.Printf("Requesting SASL authentication")
+        c.saslInProgress.Store(true)
         c.raw("CAP LS 302")
         c.raw("CAP REQ :sasl")
     }
 
-    c.rawf("NICK %s", c.Nick())
-    c.rawf("USER %s 0 * :%s", c.user, c.name)
-
     go c.readLoop()
 
     if sasl {
-        // The rest of SASL handshake continues in readLoop upon CAP ACK
+        // Wait for SASL to complete before sending NICK/USER
+        log.Printf("Waiting for SASL authentication to complete...")
+        select {
+        case success := <-c.saslComplete:
+            if success {
+                log.Printf("SASL authentication completed successfully")
+            } else {
+                log.Printf("SASL authentication failed, continuing without SASL")
+            }
+        case <-time.After(30 * time.Second):
+            log.Printf("SASL authentication timed out, continuing without SASL")
+            c.saslInProgress.Store(false)
+        }
     }
+
+    // Send NICK and USER after SASL is complete (or if SASL is not used)
+    log.Printf("Sending NICK and USER commands")
+    c.rawf("NICK %s", c.Nick())
+    c.rawf("USER %s 0 * :%s", c.user, c.name)
 
     return nil
 }
@@ -231,11 +251,17 @@ func (c *IRCClient) handleLine(line string) {
         c.rawf("NICK %s", n)
     case "CAP":
         // server capability negotiation
-        // Expect: :server CAP * ACK :sasl
+        // Expect: :server CAP * ACK :sasl or :server CAP * ACK sasl
         log.Printf("CAP response: %s %s", strings.Join(args, " "), trailing)
-        if len(args) >= 2 && strings.ToUpper(args[1]) == "ACK" && strings.ToLower(args[2]) == "sasl" {
-            log.Printf("SASL capability acknowledged, starting authentication")
-            c.raw("AUTHENTICATE PLAIN")
+        if len(args) >= 2 && strings.ToUpper(args[1]) == "ACK" {
+            capList := trailing
+            if capList == "" && len(args) > 2 {
+                capList = strings.Join(args[2:], " ")
+            }
+            if strings.Contains(strings.ToLower(capList), "sasl") {
+                log.Printf("SASL capability acknowledged, starting authentication")
+                c.raw("AUTHENTICATE PLAIN")
+            }
         }
     case "AUTHENTICATE":
         // Expect a '+' from server to send payload
@@ -248,9 +274,23 @@ func (c *IRCClient) handleLine(line string) {
     case "903": // SASL success
         log.Printf("SASL authentication successful")
         c.raw("CAP END")
+        if c.saslInProgress.Load() {
+            c.saslInProgress.Store(false)
+            select {
+            case c.saslComplete <- true:
+            default:
+            }
+        }
     case "904", "905": // SASL fail/abort
         log.Printf("SASL authentication failed (code %s)", cmd)
         c.raw("CAP END")
+        if c.saslInProgress.Load() {
+            c.saslInProgress.Store(false)
+            select {
+            case c.saslComplete <- false:
+            default:
+            }
+        }
     case "JOIN":
         // :nick!user@host JOIN :#chan
         me := strings.Split(prefix, "!")[0]
