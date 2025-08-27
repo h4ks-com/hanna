@@ -301,10 +301,12 @@ func (c *IRCClient) handleLine(line string) {
             target := args[0]
             message := trailing
             
-            // Check if message starts with "@" followed by bot's nick
+            // Check if message starts with "@" followed by bot's nick (case-insensitive)
             botNick := c.Nick()
             mention := "@" + botNick
-            if strings.HasPrefix(message, mention) && len(message) > len(mention) && message[len(mention)] == ' ' {
+            messageLower := strings.ToLower(message)
+            mentionLower := strings.ToLower(mention)
+            if strings.HasPrefix(messageLower, mentionLower) && len(message) > len(mention) && message[len(mention)] == ' ' {
                 // Extract the actual message after the mention
                 actualMessage := strings.TrimSpace(message[len(mention):])
                 log.Printf("Mentioned in %s by %s: %s", target, sender, actualMessage)
