@@ -62,4 +62,4 @@ This node is compatible with n8n version 1.0 and above.
 
 ## License
 
-MIT
+GPLv3
