@@ -308,7 +308,7 @@ func (c *IRCClient) handleLine(line string) {
         }
     case "PART":
         me := strings.Split(prefix, "!")[0]
-        if me == c.Nick() && len(args) > 0 {
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) && len(args) > 0 {
             ch := args[0]
             log.Printf("Left channel: %s", ch)
             c.channelsMu.Lock()
@@ -319,7 +319,7 @@ func (c *IRCClient) handleLine(line string) {
         // :op KICK #chan nick :reason
         if len(args) >= 2 {
             ch, nick := args[0], args[1]
-            if nick == c.Nick() {
+            if strings.ToLower(nick) == strings.ToLower(c.Nick()) {
                 log.Printf("Kicked from channel: %s", ch)
                 c.channelsMu.Lock()
                 delete(c.channels, strings.ToLower(ch))
@@ -329,7 +329,7 @@ func (c *IRCClient) handleLine(line string) {
     case "NICK":
         // :oldnick!u@h NICK :newnick
         me := strings.Split(prefix, "!")[0]
-        if me == c.Nick() && trailing != "" {
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) && trailing != "" {
             log.Printf("Nick changed from %s to %s", c.Nick(), trailing)
             c.setNick(trailing)
         }
