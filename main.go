@@ -294,7 +294,7 @@ func (c *IRCClient) handleLine(line string) {
     case "JOIN":
         // :nick!user@host JOIN :#chan
         me := strings.Split(prefix, "!")[0]
-        if me == c.Nick() {
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) {
             ch := trailing
             if ch == "" && len(args) > 0 {
                 ch = args[0]
