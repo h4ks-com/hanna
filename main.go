@@ -91,15 +91,15 @@ func NewIRCClient() *IRCClient {
         useTLS:      boolenv("IRC_TLS", true),
         tlsInsecure: boolenv("IRC_TLS_INSECURE", false),
         pass:        os.Getenv("IRC_PASS"),
-        user:        getenv("IRC_USER", "goircbot"),
-        name:        getenv("IRC_NAME", "Go IRC Bot"),
+        user:        getenv("IRC_USER", "Hanna"),
+        name:        getenv("IRC_NAME", "Hanna"),
         saslUser:    os.Getenv("SASL_USER"),
         saslPass:    os.Getenv("SASL_PASS"),
         n8nWebhook:  os.Getenv("N8N_WEBHOOK"),
         channels:    make(map[string]struct{}),
         saslComplete: make(chan bool, 1),
     }
-    c.nick.Store(getenv("IRC_NICK", "goircbot"))
+    c.nick.Store(getenv("IRC_NICK", "Hanna"))
     return c
 }
 
