@@ -29,6 +29,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "regexp"
     "strings"
     "sync"
     "sync/atomic"
@@ -341,12 +342,18 @@ func (c *IRCClient) handleLine(line string) {
             target := args[0]
             message := trailing
             
-            // Check if bot's nick appears anywhere in the message (case-insensitive)
+            // Check if bot's nick appears as a complete word in the message (case-insensitive)
             botNick := c.Nick()
-            messageLower := strings.ToLower(message)
-            botNickLower := strings.ToLower(botNick)
             
-            if strings.Contains(messageLower, botNickLower) {
+            // Create regex pattern with word boundaries to match only exact nick matches
+            pattern := `\b` + regexp.QuoteMeta(strings.ToLower(botNick)) + `\b`
+            regex, err := regexp.Compile("(?i)" + pattern)
+            if err != nil {
+                log.Printf("Error compiling regex for nick matching: %v", err)
+                return
+            }
+            
+            if regex.MatchString(message) {
                 log.Printf("Nick mentioned in %s by %s: %s", target, sender, message)
                 
                 // Call n8n webhook if configured
