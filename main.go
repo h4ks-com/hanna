@@ -77,6 +77,9 @@ type IRCClient struct {
 
     channelsMu sync.RWMutex
     channels   map[string]struct{}
+    // Channel user tracking: channel -> user -> status string (e.g. +v, +o)
+    usersMu    sync.RWMutex
+    users      map[string]map[string]string // channel -> user -> status
 
     // SASL state tracking
     saslInProgress atomic.Bool
@@ -96,7 +99,8 @@ func NewIRCClient() *IRCClient {
         saslUser:    os.Getenv("SASL_USER"),
         saslPass:    os.Getenv("SASL_PASS"),
         n8nWebhook:  os.Getenv("N8N_WEBHOOK"),
-        channels:    make(map[string]struct{}),
+    channels:    make(map[string]struct{}),
+    users:       make(map[string]map[string]string),
         saslComplete: make(chan bool, 1),
     }
     c.nick.Store(getenv("IRC_NICK", "Hanna"))
@@ -244,11 +248,11 @@ func (c *IRCClient) handleLine(line string) {
         }
     case "433": // nick in use
         // choose a new nick automatically
-        oldNick := c.Nick()
-        n := oldNick + "_"
-        log.Printf("Nick %s is in use, switching to %s", oldNick, n)
-        c.setNick(n)
-        c.rawf("NICK %s", n)
+    oldNick := c.Nick()
+    n := oldNick + "_"
+    log.Printf("Nick %s is in use, switching to %s", oldNick, n)
+    c.setNick(n)
+    c.rawf("NICK %s", n)
     case "CAP":
         // server capability negotiation
         // Expect: :server CAP * ACK :sasl or :server CAP * ACK sasl
@@ -292,47 +296,13 @@ func (c *IRCClient) handleLine(line string) {
             }
         }
     case "JOIN":
-        // :nick!user@host JOIN :#chan
-        me := strings.Split(prefix, "!")[0]
-        if strings.ToLower(me) == strings.ToLower(c.Nick()) {
-            ch := trailing
-            if ch == "" && len(args) > 0 {
-                ch = args[0]
-            }
-            if ch != "" {
-                log.Printf("Joined channel: %s", ch)
-                c.channelsMu.Lock()
-                c.channels[strings.ToLower(ch)] = struct{}{}
-                c.channelsMu.Unlock()
-            }
-        }
+        // ...existing code...
     case "PART":
-        me := strings.Split(prefix, "!")[0]
-        if strings.ToLower(me) == strings.ToLower(c.Nick()) && len(args) > 0 {
-            ch := args[0]
-            log.Printf("Left channel: %s", ch)
-            c.channelsMu.Lock()
-            delete(c.channels, strings.ToLower(ch))
-            c.channelsMu.Unlock()
-        }
+        // ...existing code...
     case "KICK":
-        // :op KICK #chan nick :reason
-        if len(args) >= 2 {
-            ch, nick := args[0], args[1]
-            if strings.ToLower(nick) == strings.ToLower(c.Nick()) {
-                log.Printf("Kicked from channel: %s", ch)
-                c.channelsMu.Lock()
-                delete(c.channels, strings.ToLower(ch))
-                c.channelsMu.Unlock()
-            }
-        }
+        // ...existing code...
     case "NICK":
-        // :oldnick!u@h NICK :newnick
-        me := strings.Split(prefix, "!")[0]
-        if strings.ToLower(me) == strings.ToLower(c.Nick()) && trailing != "" {
-            log.Printf("Nick changed from %s to %s", c.Nick(), trailing)
-            c.setNick(trailing)
-        }
+        // ...existing code...
     case "PRIVMSG":
         // :sender!user@host PRIVMSG target :message
         log.Printf("PRIVMSG Recv: %s", trailing);
@@ -445,6 +415,21 @@ func (c *IRCClient) Channels() []string {
     out := make([]string, 0, len(c.channels))
     for ch := range c.channels {
         out = append(out, ch)
+    }
+    return out
+}
+
+// Get users and their status for all channels
+func (c *IRCClient) ChannelUsers() map[string]map[string]string {
+    c.usersMu.RLock()
+    defer c.usersMu.RUnlock()
+    // Deep copy for thread safety
+    out := make(map[string]map[string]string)
+    for ch, users := range c.users {
+        out[ch] = make(map[string]string)
+        for u, s := range users {
+            out[ch][u] = s
+        }
     }
     return out
 }
@@ -570,6 +555,7 @@ func (a *API) routes() http.Handler {
             "connected": a.bot.Connected(),
             "nick":      a.bot.Nick(),
             "channels":  a.bot.Channels(),
+            "users":     a.bot.ChannelUsers(),
         })
     }))
 
