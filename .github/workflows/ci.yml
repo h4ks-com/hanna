@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    paths:
+      - 'n8n-nodes-hanna/**'
+      - '.github/workflows/ci.yml'
   pull_request:
-    branches: [ main, develop ]
+    paths:
+      - 'n8n-nodes-hanna/**'
+      - '.github/workflows/ci.yml'
 
 jobs:
   lint-and-build:
