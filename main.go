@@ -295,14 +295,48 @@ func (c *IRCClient) handleLine(line string) {
             default:
             }
         }
-    case "JOIN":
-        // ...existing code...
+     case "JOIN":
+        // :nick!user@host JOIN :#chan
+        me := strings.Split(prefix, "!")[0]
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) {
+            ch := trailing
+            if ch == "" && len(args) > 0 {
+                ch = args[0]
+            }
+            if ch != "" {
+                log.Printf("Joined channel: %s", ch)
+                c.channelsMu.Lock()
+                c.channels[strings.ToLower(ch)] = struct{}{}
+                c.channelsMu.Unlock()
+            }
+        }
     case "PART":
-        // ...existing code...
+        me := strings.Split(prefix, "!")[0]
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) && len(args) > 0 {
+            ch := args[0]
+            log.Printf("Left channel: %s", ch)
+            c.channelsMu.Lock()
+            delete(c.channels, strings.ToLower(ch))
+            c.channelsMu.Unlock()
+        }
     case "KICK":
-        // ...existing code...
+        // :op KICK #chan nick :reason
+        if len(args) >= 2 {
+            ch, nick := args[0], args[1]
+            if strings.ToLower(nick) == strings.ToLower(c.Nick()) {
+                log.Printf("Kicked from channel: %s", ch)
+                c.channelsMu.Lock()
+                delete(c.channels, strings.ToLower(ch))
+                c.channelsMu.Unlock()
+            }
+        }
     case "NICK":
-        // ...existing code...
+        // :oldnick!u@h NICK :newnick
+        me := strings.Split(prefix, "!")[0]
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) && trailing != "" {
+            log.Printf("Nick changed from %s to %s", c.Nick(), trailing)
+            c.setNick(trailing)
+        }
     case "PRIVMSG":
         // :sender!user@host PRIVMSG target :message
         log.Printf("PRIVMSG Recv: %s", trailing);
