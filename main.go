@@ -165,11 +165,18 @@ func (c *IRCClient) Dial(ctx context.Context) error {
 
     // Check if SASL is configured
     sasl := c.saslUser != "" && c.saslPass != ""
+    
+    // Always request CAP negotiation for message-tags (and SASL if configured)
+    log.Printf("Starting capability negotiation")
+    c.raw("CAP LS 302")
+    
     if sasl {
-        log.Printf("Requesting SASL authentication")
+        log.Printf("Requesting SASL and message-tags capabilities")
         c.saslInProgress.Store(true)
-        c.raw("CAP LS 302")
-        c.raw("CAP REQ :sasl")
+        c.raw("CAP REQ :sasl message-tags")
+    } else {
+        log.Printf("Requesting message-tags capability")
+        c.raw("CAP REQ :message-tags")
     }
 
     go c.readLoop()
@@ -217,8 +224,46 @@ func (c *IRCClient) readLoop() {
 }
 
 func (c *IRCClient) handleLine(line string) {
-    prefix := ""
+    // Parse message tags if present
+    var tags map[string]string
     rest := line
+    
+    if strings.HasPrefix(rest, "@") {
+        // Find the end of the tags section
+        if i := strings.Index(rest, " "); i != -1 {
+            tagSection := rest[1:i] // Remove the @ prefix
+            rest = strings.TrimSpace(rest[i+1:])
+            
+            // Parse individual tags
+            tags = make(map[string]string)
+            if tagSection != "" {
+                tagPairs := strings.Split(tagSection, ";")
+                for _, pair := range tagPairs {
+                    if strings.Contains(pair, "=") {
+                        parts := strings.SplitN(pair, "=", 2)
+                        key := parts[0]
+                        value := parts[1]
+                        // Unescape tag values according to IRC v3.2 spec
+                        value = strings.ReplaceAll(value, "\\:", ";")
+                        value = strings.ReplaceAll(value, "\\s", " ")
+                        value = strings.ReplaceAll(value, "\\\\", "\\")
+                        value = strings.ReplaceAll(value, "\\r", "\r")
+                        value = strings.ReplaceAll(value, "\\n", "\n")
+                        tags[key] = value
+                    } else {
+                        // Tag without value
+                        tags[pair] = ""
+                    }
+                }
+            }
+            
+            if len(tags) > 0 {
+                log.Printf("Parsed message tags: %v", tags)
+            }
+        }
+    }
+    
+    prefix := ""
     if strings.HasPrefix(rest, ":") {
         if i := strings.Index(rest, " "); i != -1 {
             prefix = rest[1:i]
@@ -284,9 +329,19 @@ func (c *IRCClient) handleLine(line string) {
             if capList == "" && len(args) > 2 {
                 capList = strings.Join(args[2:], " ")
             }
+            log.Printf("Server acknowledged capabilities: %s", capList)
+            
+            if strings.Contains(strings.ToLower(capList), "message-tags") {
+                log.Printf("Message-tags capability enabled")
+            }
+            
             if strings.Contains(strings.ToLower(capList), "sasl") {
                 log.Printf("SASL capability acknowledged, starting authentication")
                 c.raw("AUTHENTICATE PLAIN")
+            } else if !c.saslInProgress.Load() {
+                // No SASL requested, end CAP negotiation
+                log.Printf("Ending capability negotiation")
+                c.raw("CAP END")
             }
         }
     case "AUTHENTICATE":
@@ -362,6 +417,9 @@ func (c *IRCClient) handleLine(line string) {
     case "PRIVMSG":
         // :sender!user@host PRIVMSG target :message
         log.Printf("PRIVMSG Recv: %s", trailing);
+        if len(tags) > 0 {
+            log.Printf("Message tags: %v", tags)
+        }
         if len(args) >= 1 && trailing != "" {
             sender := strings.Split(prefix, "!")[0]
             target := args[0]
@@ -393,32 +451,34 @@ func (c *IRCClient) handleLine(line string) {
                 
                 // Call n8n webhook if configured
                 if c.n8nWebhook != "" {
-                    go c.callN8NWebhook(sender, target, message, message)
+                    go c.callN8NWebhook(sender, target, message, message, tags)
                 }
             }
         }
     }
 }
 
-func (c *IRCClient) callN8NWebhook(sender, target, message, fullMessage string) {
+func (c *IRCClient) callN8NWebhook(sender, target, message, fullMessage string, tags map[string]string) {
     type N8NPayload struct {
-        Sender      string `json:"sender"`
-        Target      string `json:"target"`
-        Message     string `json:"message"`
-        ChatInput string `json:"chatInput"`
-        BotNick     string `json:"botNick"`
-        SessionId string `json:"sessionId"`
-        Timestamp   int64  `json:"timestamp"`
+        Sender      string            `json:"sender"`
+        Target      string            `json:"target"`
+        Message     string            `json:"message"`
+        ChatInput   string            `json:"chatInput"`
+        BotNick     string            `json:"botNick"`
+        SessionId   string            `json:"sessionId"`
+        Timestamp   int64             `json:"timestamp"`
+        MessageTags map[string]string `json:"messageTags,omitempty"`
     }
 
     payload := N8NPayload{
         Sender:      sender,
         Target:      target,
         Message:     message,
-        SessionId:  "IRC",
-        ChatInput: fullMessage,
+        SessionId:   "IRC",
+        ChatInput:   fullMessage,
         BotNick:     c.Nick(),
         Timestamp:   time.Now().Unix(),
+        MessageTags: tags,
     }
 
     jsonData, err := json.Marshal(payload)
