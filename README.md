@@ -477,13 +477,21 @@ Consider extending the bot with Prometheus metrics for comprehensive monitoring.
 4. **File Permissions**: Protect certificate files (0600 permissions)
 5. **Regular Updates**: Keep dependencies and certificates updated
 
+## 🧪 Testing
+
+```bash
+# Run all tests
+go test -v
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Add tests if applicable
-5. Submit a pull request
+5. Run `go test -v` to ensure all tests pass
+6. Submit a pull request
 
 ## 📄 License
 

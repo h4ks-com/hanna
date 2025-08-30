@@ -37,6 +37,31 @@ import (
     "time"
 )
 
+// Characters that should be ignored when surrounding the bot nick
+var ignoreChars = []string{"/"}
+
+// Helper function to check if a nick mention should be ignored based on surrounding characters
+func shouldIgnoreNickMention(message, quotedNick string) bool {
+    for _, char := range ignoreChars {
+        // Check for patterns like /nick/ (both sides)
+        bothSidesPattern := char + quotedNick + char
+        if matched, _ := regexp.MatchString("(?i)"+regexp.QuoteMeta(bothSidesPattern), message); matched {
+            return true
+        }
+        
+        // Check for patterns like /nick (left side only)
+        if matched, _ := regexp.MatchString("(?i)"+regexp.QuoteMeta(char)+quotedNick+`\b`, message); matched {
+            return true
+        }
+        
+        // Check for patterns like nick/ (right side only)  
+        if matched, _ := regexp.MatchString("(?i)"+`\b`+quotedNick+regexp.QuoteMeta(char), message); matched {
+            return true
+        }
+    }
+    return false
+}
+
 // --- Utilities ---
 
 func getenv(key, def string) string {
@@ -343,17 +368,27 @@ func (c *IRCClient) handleLine(line string) {
             message := trailing
             
             // Check if bot's nick appears as a complete word in the message (case-insensitive)
+            // Ignore when surrounded by specific characters like '/'
             botNick := c.Nick()
             
-            // Create regex pattern with word boundaries to match only exact nick matches
-            pattern := `\b` + regexp.QuoteMeta(strings.ToLower(botNick)) + `\b`
+            // Create regex pattern that matches bot nick with word boundaries
+            quotedNick := regexp.QuoteMeta(strings.ToLower(botNick))
+            pattern := `\b` + quotedNick + `\b`
             regex, err := regexp.Compile("(?i)" + pattern)
             if err != nil {
                 log.Printf("Error compiling regex for nick matching: %v", err)
                 return
             }
             
+            // First check if the nick matches as a word
             if regex.MatchString(message) {
+                // Additional check: reject if surrounded by ignore characters
+                if shouldIgnoreNickMention(message, quotedNick) {
+                    // Skip this match - it's surrounded by ignore characters
+                    return
+                }
+                
+                // This is a valid mention
                 log.Printf("Nick mentioned in %s by %s: %s", target, sender, message)
                 
                 // Call n8n webhook if configured
