@@ -10,7 +10,9 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 - **SASL Authentication**: Optional SASL PLAIN authentication for IRC networks that require it
 - **Auto-Reconnect**: Intelligent reconnection with exponential backoff for maximum uptime
 - **REST API**: Token-protected HTTP/HTTPS endpoints for complete bot control
-- **n8n Integration**: Automatic webhook calls when mentioned in IRC channels
+- **Flexible Event System**: Advanced trigger system supporting multiple IRC events (mentions, joins, parts, mode changes, etc.)
+- **n8n Integration**: Comprehensive n8n node package with both action and trigger nodes
+- **Multiple Webhooks**: Support for multiple trigger endpoints with filtering and authentication
 - **Channel Management**: Join, part, and track channels programmatically
 - **Message Control**: Send messages, notices, and raw IRC commands via API
 - **Graceful Shutdown**: Clean disconnection and resource cleanup
@@ -77,7 +79,49 @@ All configuration is done via environment variables:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `N8N_WEBHOOK` | n8n webhook URL for chat integration | - | ❌ |
+| `N8N_WEBHOOK` | Legacy webhook URL for chat integration | - | ❌ |
+| `TRIGGER_CONFIG` | JSON configuration for multiple trigger endpoints | - | ❌ |
+
+### Event Trigger Configuration
+
+The bot supports a flexible trigger system for sending IRC events to multiple endpoints:
+
+**Legacy Mode (backward compatible):**
+```bash
+export N8N_WEBHOOK="https://n8n.example.com/webhook/irc-bot"
+```
+
+**Advanced Mode (recommended):**
+```bash
+export TRIGGER_CONFIG='{
+  "endpoints": {
+    "mentions": {
+      "url": "https://n8n.example.com/webhook/mentions",
+      "token": "secret-token-123",
+      "events": ["mention"],
+      "channels": ["#support", "#general"]
+    },
+    "moderation": {
+      "url": "https://n8n.example.com/webhook/moderation", 
+      "token": "mod-token-456",
+      "events": ["join", "part", "kick", "mode"],
+      "channels": ["#general"]
+    }
+  }
+}'
+```
+
+**Supported Event Types:**
+- `mention` - When the bot is mentioned
+- `privmsg` - All channel/private messages
+- `join` - User joins a channel
+- `part` - User leaves a channel  
+- `quit` - User quits IRC
+- `kick` - User is kicked from channel
+- `mode` - Mode changes (op, voice, etc.)
+- `nick` - Nickname changes
+- `topic` - Channel topic changes
+- `notice` - IRC notices
 
 *Required when `API_TLS=1`  
 ⚠️ Highly recommended for security
@@ -224,7 +268,7 @@ Content-Type: application/json
 ```bash
 #!/bin/bash
 
-# Production setup with HTTPS and n8n integration
+# Production setup with HTTPS and advanced n8n trigger integration
 export API_TOKEN="$(openssl rand -hex 32)"
 export API_TLS=1
 export API_CERT="/etc/letsencrypt/live/bot.example.com/fullchain.pem"
@@ -236,39 +280,183 @@ export IRC_NICK="MyAwesomeBot"
 export IRC_USER="mybot"
 export IRC_NAME="My Awesome IRC Bot"
 export AUTOJOIN="#general,#bots"
-export N8N_WEBHOOK="https://n8n.example.com/webhook/irc-bot"
+
+# Advanced trigger configuration for multiple n8n workflows
+export TRIGGER_CONFIG='{
+  "endpoints": {
+    "mentions": {
+      "url": "https://n8n.example.com/webhook/bot-mentions",
+      "token": "mention-token-123",
+      "events": ["mention"],
+      "channels": ["#general", "#support"]
+    },
+    "moderation": {
+      "url": "https://n8n.example.com/webhook/moderation",
+      "token": "mod-token-456", 
+      "events": ["join", "part", "kick", "mode"],
+      "channels": ["#general"]
+    },
+    "private-messages": {
+      "url": "https://n8n.example.com/webhook/private-chat",
+      "token": "private-token-789",
+      "events": ["privmsg"],
+      "channels": []
+    }
+  }
+}'
 
 ./hanna
 ```
 
-### n8n Integration
+### n8n Integration & Event Triggers
 
-When someone mentions the bot in IRC with `@botname message`, the bot will automatically call the configured n8n webhook with a JSON payload:
+The bot provides comprehensive integration with n8n through both legacy webhooks and the new trigger system.
+
+#### Legacy Webhook Integration (Simple)
+
+When someone mentions the bot in IRC with `@botname message`, the bot will automatically call the configured n8n webhook:
 
 ```json
 {
+  "eventType": "mention",
   "sender": "username",
-  "target": "#channel",
+  "target": "#channel", 
   "message": "hello bot",
-  "fullMessage": "@botname hello bot",
+  "chatInput": "@botname hello bot",
   "botNick": "MyAwesomeBot",
+  "sessionId": "IRC",
+  "timestamp": 1692345678,
+  "messageTags": {
+    "time": "2023-09-01T12:00:00.000Z"
+  }
+}
+```
+
+#### Advanced Trigger System (Recommended)
+
+The new trigger system supports multiple IRC events and endpoints:
+
+**1. Install the n8n Node Package**
+
+```bash
+# In your n8n installation
+npm install n8n-nodes-hanna
+```
+
+**2. Create Trigger Workflows**
+
+- Add "Hanna Bot Trigger" nodes to your workflows
+- Configure authentication tokens and event filters
+- Copy webhook URLs to your `TRIGGER_CONFIG`
+
+**3. Event Examples:**
+
+**User Joins Channel:**
+```json
+{
+  "eventType": "join",
+  "sender": "newuser",
+  "target": "#general",
+  "message": "",
+  "botNick": "MyBot",
+  "timestamp": 1692345678
+}
+```
+
+**Channel Mode Change:**
+```json
+{
+  "eventType": "mode", 
+  "sender": "operator",
+  "target": "#general",
+  "message": "Mode #general +o newop",
+  "timestamp": 1692345678
+}
+```
+
+**Private Message:**
+```json
+{
+  "eventType": "privmsg",
+  "sender": "user123",
+  "target": "MyBot",
+  "message": "Hello bot, how are you?",
+  "chatInput": "Hello bot, how are you?",
   "timestamp": 1692345678
 }
 ```
 
 #### Example n8n Workflow Setup
 
+**Using the New Trigger Node (Recommended):**
+
+1. Install `n8n-nodes-hanna` package in your n8n instance
+2. Create a new workflow in n8n
+3. Add a "Hanna Bot Trigger" node
+4. Configure:
+   - Authentication token (create a secure random token)
+   - Select events you want to monitor (mention, join, part, etc.)
+   - Optional: Filter by channels or users
+5. Copy the webhook URL from the trigger node
+6. Add the URL and token to your bot's `TRIGGER_CONFIG`
+7. Add processing nodes (OpenAI, database, notifications, etc.)
+8. Optionally add "Hanna Bot" action node to send responses back to IRC
+
+**Using Legacy Webhook:**
+
 1. Create a new workflow in n8n
-2. Add a "Webhook" trigger node
+2. Add a "Webhook" trigger node  
 3. Set the webhook URL in the `N8N_WEBHOOK` environment variable
 4. Process the incoming IRC data and respond as needed
 5. Optionally use the Hanna API to send responses back to IRC
 
+#### Advanced Workflow Examples
+
+**AI-Powered Chat Bot:**
+```
+Hanna Bot Trigger (mention events) 
+  → OpenAI Chat Completion
+  → Hanna Bot Send Message
+```
+
+**Channel Moderation:**
+```
+Hanna Bot Trigger (kick, mode events)
+  → Log to Database
+  → Send Alert if Spam Detected
+  → Auto-Ban Repeat Offenders
+```
+
+**Welcome System:**
+```  
+Hanna Bot Trigger (join events)
+  → Check User Database
+  → Send Welcome Message for New Users
+  → Assign Roles Based on Rules
+```
+
+**Multi-Channel Bot:**
+```
+Trigger 1: Support Channel (mention, privmsg in #support)
+  → Route to Support AI
+  → Log Support Ticket
+  
+Trigger 2: General Chat (mention in #general)  
+  → Route to Fun AI
+  → Random Responses
+```
+
 **Mention Examples:**
-- `@MyAwesomeBot what's the weather?` → Triggers webhook
-- `@MyAwesomeBot help` → Triggers webhook  
-- `MyAwesomeBot hello` → Does NOT trigger (missing @)
-- `@DifferentBot hello` → Does NOT trigger (wrong bot name)
+- `@MyAwesomeBot what's the weather?` → Triggers mention event
+- `@MyAwesomeBot help` → Triggers mention event  
+- `MyAwesomeBot hello` → Does NOT trigger mention (missing @)
+- `@DifferentBot hello` → Does NOT trigger mention (wrong bot name)
+
+**Other Event Examples:**
+- User joins `#general` → Triggers join event  
+- User types `hello everyone` in `#general` → Triggers privmsg event
+- Operator gives voice to user → Triggers mode event
+- User gets kicked from channel → Triggers kick event
 
 ### Send Message via API
 
@@ -444,6 +632,9 @@ API_KEY=/etc/letsencrypt/live/bot.example.com/privkey.pem
 IRC_ADDR=irc.libera.chat:6697
 IRC_NICK=HannaBot
 AUTOJOIN=#general
+
+# Advanced trigger configuration
+TRIGGER_CONFIG={"endpoints":{"mentions":{"url":"https://n8n.example.com/webhook/mentions","token":"secure-token-123","events":["mention"],"channels":["#general","#support"]},"moderation":{"url":"https://n8n.example.com/webhook/moderation","token":"mod-token-456","events":["join","part","kick","mode"],"channels":["#general"]}}}
 ```
 
 Enable and start:
@@ -476,6 +667,57 @@ Consider extending the bot with Prometheus metrics for comprehensive monitoring.
 3. **Firewall**: Restrict API access to trusted networks
 4. **File Permissions**: Protect certificate files (0600 permissions)
 5. **Regular Updates**: Keep dependencies and certificates updated
+
+## 📦 n8n Node Package
+
+Hanna includes a comprehensive n8n node package (`n8n-nodes-hanna`) that provides both action and trigger nodes for complete IRC automation.
+
+### Installation
+
+```bash
+# Install in your n8n instance
+npm install n8n-nodes-hanna
+
+# Or install globally
+npm install -g n8n-nodes-hanna
+```
+
+### Available Nodes
+
+#### 1. Hanna Bot (Action Node)
+- Send messages and notices to IRC channels
+- Join and part channels programmatically  
+- Change bot nickname
+- Send raw IRC commands
+- Get bot status and connected channels
+
+#### 2. Hanna Bot Trigger (Trigger Node)
+- Webhook-based trigger for IRC events
+- Configurable event filtering (mention, join, part, etc.)
+- Channel and user filtering
+- Authentication token validation
+- Support for multiple simultaneous triggers
+
+### Node Configuration
+
+#### Action Node Setup:
+1. Add "Hanna Bot" node to your workflow
+2. Configure credentials:
+   - API URL: `https://your-bot.example.com`
+   - API Token: Your bot's API token
+3. Select operation (Send Message, Join Channel, etc.)
+4. Configure target and message parameters
+
+#### Trigger Node Setup:
+1. Add "Hanna Bot Trigger" node to your workflow
+2. Set authentication token (secure random string)
+3. Select IRC events to monitor
+4. Optional: Set channel/user filters
+5. Copy webhook URL to bot's `TRIGGER_CONFIG`
+
+### Example Workflows
+
+See the [Advanced Workflow Examples](#advanced-workflow-examples) section above for complete workflow configurations using both trigger and action nodes.
 
 ## 🧪 Testing
 

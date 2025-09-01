@@ -37,7 +37,8 @@
       "dist/credentials/HannaBotApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/HannaBot/HannaBot.node.js"
+      "dist/nodes/HannaBot/HannaBot.node.js",
+      "dist/nodes/HannaBotTrigger/HannaBotTrigger.node.js"
     ]
   },
   "devDependencies": {

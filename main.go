@@ -84,6 +84,18 @@ func boolenv(key string, def bool) bool {
 
 // --- IRC Client ---
 
+type TriggerPayload struct {
+    EventType   string            `json:"eventType"`
+    Sender      string            `json:"sender"`
+    Target      string            `json:"target"`
+    Message     string            `json:"message"`
+    ChatInput   string            `json:"chatInput"`
+    BotNick     string            `json:"botNick"`
+    SessionId   string            `json:"sessionId"`
+    Timestamp   int64             `json:"timestamp"`
+    MessageTags map[string]string `json:"messageTags,omitempty"`
+}
+
 type IRCClient struct {
     addr          string
     useTLS        bool
@@ -94,7 +106,7 @@ type IRCClient struct {
     name          string
     saslUser      string
     saslPass      string
-    n8nWebhook    string
+    triggerConfig TriggerConfig
 
     conn   net.Conn
     rw     *bufio.ReadWriter
@@ -111,6 +123,18 @@ type IRCClient struct {
     onReady func()
 }
 
+type TriggerConfig struct {
+    Endpoints map[string]TriggerEndpoint `json:"endpoints"`
+}
+
+type TriggerEndpoint struct {
+    URL       string   `json:"url"`
+    Token     string   `json:"token"`
+    Events    []string `json:"events"`
+    Channels  []string `json:"channels,omitempty"`
+    Users     []string `json:"users,omitempty"`
+}
+
 func NewIRCClient() *IRCClient {
     c := &IRCClient{
         addr:        getenv("IRC_ADDR", ""),
@@ -121,12 +145,38 @@ func NewIRCClient() *IRCClient {
         name:        getenv("IRC_NAME", "Hanna"),
         saslUser:    os.Getenv("SASL_USER"),
         saslPass:    os.Getenv("SASL_PASS"),
-        n8nWebhook:  os.Getenv("N8N_WEBHOOK"),
         channels:    make(map[string]struct{}),
         saslComplete: make(chan bool, 1),
     }
     c.nick.Store(getenv("IRC_NICK", "Hanna"))
+    
+    // Load trigger configuration
+    c.loadTriggerConfig()
+    
     return c
+}
+
+func (c *IRCClient) loadTriggerConfig() {
+    configStr := os.Getenv("TRIGGER_CONFIG")
+    if configStr == "" {
+        // Fallback to legacy N8N_WEBHOOK for backward compatibility
+        if webhook := os.Getenv("N8N_WEBHOOK"); webhook != "" {
+            c.triggerConfig = TriggerConfig{
+                Endpoints: map[string]TriggerEndpoint{
+                    "legacy": {
+                        URL:    webhook,
+                        Events: []string{"mention"},
+                    },
+                },
+            }
+        }
+        return
+    }
+    
+    if err := json.Unmarshal([]byte(configStr), &c.triggerConfig); err != nil {
+        log.Printf("Error parsing TRIGGER_CONFIG: %v", err)
+        c.triggerConfig = TriggerConfig{Endpoints: make(map[string]TriggerEndpoint)}
+    }
 }
 
 func (c *IRCClient) Connected() bool { return c.alive.Load() }
@@ -372,40 +422,58 @@ func (c *IRCClient) handleLine(line string) {
             default:
             }
         }
-    case "JOIN":
-        // :nick!user@host JOIN :#chan
-        me := strings.Split(prefix, "!")[0]
-        if strings.ToLower(me) == strings.ToLower(c.Nick()) {
-            ch := trailing
-            if ch == "" && len(args) > 0 {
-                ch = args[0]
-            }
-            if ch != "" {
-                log.Printf("Joined channel: %s", ch)
-                c.channelsMu.Lock()
-                c.channels[strings.ToLower(ch)] = struct{}{}
-                c.channelsMu.Unlock()
-            }
-        }
-    case "PART":
-        me := strings.Split(prefix, "!")[0]
-        if strings.ToLower(me) == strings.ToLower(c.Nick()) && len(args) > 0 {
-            ch := args[0]
-            log.Printf("Left channel: %s", ch)
-            c.channelsMu.Lock()
-            delete(c.channels, strings.ToLower(ch))
-            c.channelsMu.Unlock()
-        }
     case "KICK":
         // :op KICK #chan nick :reason
         if len(args) >= 2 {
-            ch, nick := args[0], args[1]
-            if strings.ToLower(nick) == strings.ToLower(c.Nick()) {
+            ch, kickedNick := args[0], args[1]
+            kicker := strings.Split(prefix, "!")[0]
+            reason := trailing
+            
+            if strings.ToLower(kickedNick) == strings.ToLower(c.Nick()) {
                 log.Printf("Kicked from channel: %s", ch)
                 c.channelsMu.Lock()
                 delete(c.channels, strings.ToLower(ch))
                 c.channelsMu.Unlock()
+            } else {
+                log.Printf("User %s kicked %s from %s: %s", kicker, kickedNick, ch, reason)
+                c.sendTriggerEvent("kick", kicker, ch, fmt.Sprintf("%s kicked %s: %s", kicker, kickedNick, reason), reason, tags)
             }
+        }
+    case "MODE":
+        // :nick!user@host MODE target modestring [params...]
+        if len(args) >= 2 {
+            setter := strings.Split(prefix, "!")[0]
+            target := args[0]
+            modeString := args[1]
+            params := ""
+            if len(args) > 2 {
+                params = strings.Join(args[2:], " ")
+            }
+            
+            message := fmt.Sprintf("Mode %s %s %s", target, modeString, params)
+            log.Printf("Mode change by %s: %s", setter, message)
+            c.sendTriggerEvent("mode", setter, target, message, message, tags)
+        }
+    case "TOPIC":
+        // :nick!user@host TOPIC #channel :new topic
+        if len(args) >= 1 {
+            setter := strings.Split(prefix, "!")[0]
+            channel := args[0]
+            topic := trailing
+            
+            message := fmt.Sprintf("Topic for %s set by %s: %s", channel, setter, topic)
+            log.Printf("Topic change: %s", message)
+            c.sendTriggerEvent("topic", setter, channel, message, topic, tags)
+        }
+    case "NOTICE":
+        // :sender!user@host NOTICE target :message
+        if len(args) >= 1 && trailing != "" {
+            sender := strings.Split(prefix, "!")[0]
+            target := args[0]
+            message := trailing
+            
+            log.Printf("NOTICE from %s to %s: %s", sender, target, message)
+            c.sendTriggerEvent("notice", sender, target, message, message, tags)
         }
     case "NICK":
         // :oldnick!u@h NICK :newnick
@@ -425,7 +493,8 @@ func (c *IRCClient) handleLine(line string) {
             target := args[0]
             message := trailing
             
-            // Check if bot's nick appears as a complete word in the message (case-insensitive)
+            // Send general privmsg event first
+            c.sendTriggerEvent("privmsg", sender, target, message, message, tags)
             // Ignore when surrounded by specific characters like '/'
             botNick := c.Nick()
             
@@ -446,31 +515,71 @@ func (c *IRCClient) handleLine(line string) {
                     return
                 }
                 
-                // This is a valid mention
+                                // This is a valid mention
                 log.Printf("Nick mentioned in %s by %s: %s", target, sender, message)
                 
-                // Call n8n webhook if configured
-                if c.n8nWebhook != "" {
-                    go c.callN8NWebhook(sender, target, message, message, tags)
-                }
+                // Send mention event to triggers
+                c.sendTriggerEvent("mention", sender, target, message, message, tags)
             }
         }
+    case "JOIN":
+        // :nick!user@host JOIN :#chan
+        senderParts := strings.Split(prefix, "!")
+        sender := senderParts[0]
+        me := sender
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) {
+            ch := trailing
+            if ch == "" && len(args) > 0 {
+                ch = args[0]
+            }
+            if ch != "" {
+                log.Printf("Joined channel: %s", ch)
+                c.channelsMu.Lock()
+                c.channels[strings.ToLower(ch)] = struct{}{}
+                c.channelsMu.Unlock()
+            }
+        } else {
+            // Someone else joined
+            ch := trailing
+            if ch == "" && len(args) > 0 {
+                ch = args[0]
+            }
+            if ch != "" {
+                log.Printf("User %s joined %s", sender, ch)
+                c.sendTriggerEvent("join", sender, ch, "", "", tags)
+            }
+        }
+    case "PART":
+        senderParts := strings.Split(prefix, "!")
+        sender := senderParts[0]
+        me := sender
+        if strings.ToLower(me) == strings.ToLower(c.Nick()) && len(args) > 0 {
+            ch := args[0]
+            log.Printf("Left channel: %s", ch)
+            c.channelsMu.Lock()
+            delete(c.channels, strings.ToLower(ch))
+            c.channelsMu.Unlock()
+        } else if len(args) > 0 {
+            // Someone else parted
+            ch := args[0]
+            reason := trailing
+            log.Printf("User %s left %s: %s", sender, ch, reason)
+            c.sendTriggerEvent("part", sender, ch, reason, reason, tags)
+        }
+    case "QUIT":
+        // :nick!user@host QUIT :reason
+        senderParts := strings.Split(prefix, "!")
+        sender := senderParts[0]
+        reason := trailing
+        log.Printf("User %s quit: %s", sender, reason)
+        c.sendTriggerEvent("quit", sender, "", reason, reason, tags)
     }
 }
 
-func (c *IRCClient) callN8NWebhook(sender, target, message, fullMessage string, tags map[string]string) {
-    type N8NPayload struct {
-        Sender      string            `json:"sender"`
-        Target      string            `json:"target"`
-        Message     string            `json:"message"`
-        ChatInput   string            `json:"chatInput"`
-        BotNick     string            `json:"botNick"`
-        SessionId   string            `json:"sessionId"`
-        Timestamp   int64             `json:"timestamp"`
-        MessageTags map[string]string `json:"messageTags,omitempty"`
-    }
 
-    payload := N8NPayload{
+func (c *IRCClient) sendTriggerEvent(eventType, sender, target, message, fullMessage string, tags map[string]string) {
+    payload := TriggerPayload{
+        EventType:   eventType,
         Sender:      sender,
         Target:      target,
         Message:     message,
@@ -481,24 +590,84 @@ func (c *IRCClient) callN8NWebhook(sender, target, message, fullMessage string, 
         MessageTags: tags,
     }
 
+    for endpointName, endpoint := range c.triggerConfig.Endpoints {
+        // Check if this endpoint listens for this event type
+        found := false
+        for _, event := range endpoint.Events {
+            if event == eventType {
+                found = true
+                break
+            }
+        }
+        if !found {
+            continue
+        }
+
+        // Check channel filter
+        if len(endpoint.Channels) > 0 && target != "" {
+            found = false
+            for _, ch := range endpoint.Channels {
+                if strings.EqualFold(ch, target) {
+                    found = true
+                    break
+                }
+            }
+            if !found {
+                continue
+            }
+        }
+
+        // Check user filter
+        if len(endpoint.Users) > 0 && sender != "" {
+            found = false
+            for _, user := range endpoint.Users {
+                if strings.EqualFold(user, sender) {
+                    found = true
+                    break
+                }
+            }
+            if !found {
+                continue
+            }
+        }
+
+        // Send to this endpoint
+        go c.callTriggerEndpoint(endpointName, endpoint, payload)
+    }
+}
+
+func (c *IRCClient) callTriggerEndpoint(name string, endpoint TriggerEndpoint, payload TriggerPayload) {
     jsonData, err := json.Marshal(payload)
     if err != nil {
-        log.Printf("Error marshaling n8n payload: %v", err)
+        log.Printf("Error marshaling trigger payload for %s: %v", name, err)
         return
     }
-    log.Printf("Calling webhook: %s", c.n8nWebhook);
+
+    log.Printf("Calling trigger endpoint %s: %s", name, endpoint.URL)
+    
     client := &http.Client{Timeout: 10 * time.Second}
-    resp, err := client.Post(c.n8nWebhook, "application/json", bytes.NewBuffer(jsonData))
+    req, err := http.NewRequest("POST", endpoint.URL, bytes.NewBuffer(jsonData))
     if err != nil {
-        log.Printf("Error calling n8n webhook: %v", err)
+        log.Printf("Error creating request for %s: %v", name, err)
+        return
+    }
+    
+    req.Header.Set("Content-Type", "application/json")
+    if endpoint.Token != "" {
+        req.Header.Set("Authorization", "Bearer "+endpoint.Token)
+    }
+
+    resp, err := client.Do(req)
+    if err != nil {
+        log.Printf("Error calling trigger endpoint %s: %v", name, err)
         return
     }
     defer resp.Body.Close()
 
     if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-        log.Printf("Successfully called n8n webhook for message from %s", sender)
+        log.Printf("Successfully called trigger endpoint %s for %s event from %s", name, payload.EventType, payload.Sender)
     } else {
-        log.Printf("n8n webhook returned status %d", resp.StatusCode)
+        log.Printf("Trigger endpoint %s returned status %d for %s event", name, resp.StatusCode, payload.EventType)
     }
 }
 
