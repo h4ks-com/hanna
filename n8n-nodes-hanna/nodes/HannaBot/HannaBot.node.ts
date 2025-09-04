@@ -14,7 +14,7 @@ export class HannaBot implements INodeType {
     icon: 'fa:comments',
     group: ['transform'],
     version: 1,
-    subtitle: '={{$parameter["operation"] + ": " + $parameter["target"] || "IRC Bot Operations"}}',
+    subtitle: '={{$parameter["operation"] === "whois" ? "WHOIS: " + $parameter["whoisNick"] : $parameter["operation"] === "list" ? "List Channels" : $parameter["operation"] + ": " + $parameter["target"] || "IRC Bot Operations"}}',
     description: 'Interact with Hanna IRC Bot via its REST API',
     usableAsTool: true,
     defaults: {
@@ -77,6 +77,18 @@ export class HannaBot implements INodeType {
             description: 'Send raw IRC command',
             action: 'Send raw IRC command',
           },
+          {
+            name: 'List Channels',
+            value: 'list',
+            description: 'Get list of all IRC channels on the network',
+            action: 'List IRC channels',
+          },
+          {
+            name: 'Get User Info (WHOIS)',
+            value: 'whois',
+            description: 'Get detailed information about a specific user',
+            action: 'Get user information',
+          },
         ],
         default: 'send',
         required: true,
@@ -93,6 +105,21 @@ export class HannaBot implements INodeType {
         displayOptions: {
           show: {
             operation: ['send', 'notice', 'join', 'part'],
+          },
+        },
+      },
+      // Nick field for whois operation
+      {
+        displayName: 'Nickname',
+        name: 'whoisNick',
+        type: 'string',
+        default: '',
+        placeholder: 'username',
+        required: true,
+        description: 'IRC nickname to get information about',
+        displayOptions: {
+          show: {
+            operation: ['whois'],
           },
         },
       },
@@ -235,6 +262,19 @@ export class HannaBot implements INodeType {
             };
             break;
 
+          case 'list':
+            endpoint = '/api/list';
+            method = 'GET';
+            break;
+
+          case 'whois':
+            endpoint = '/api/whois';
+            method = 'POST';
+            body = {
+              nick: this.getNodeParameter('whoisNick', i) as string,
+            };
+            break;
+
           default:
             throw new NodeOperationError(this.getNode(), `Invalid operation: ${operation}`, {
               itemIndex: i,
@@ -269,6 +309,63 @@ export class HannaBot implements INodeType {
           responseData.newNick = this.getNodeParameter('nick', i);
         } else if (operation === 'raw') {
           responseData.command = this.getNodeParameter('command', i);
+        } else if (operation === 'list') {
+          // For list operation, include channel count and make channels easily accessible
+          const channels = responseData.response.channels || [];
+          responseData.channelCount = responseData.response.count || channels.length;
+          responseData.channels = channels;
+          
+          // Add summary statistics
+          const totalUsers = channels.reduce((sum: number, channel: any) => {
+            return sum + parseInt(channel.users || '0', 10);
+          }, 0);
+          responseData.totalUsers = totalUsers;
+          
+          // Find largest channels
+          const sortedChannels = [...channels].sort((a: any, b: any) => {
+            return parseInt(b.users || '0', 10) - parseInt(a.users || '0', 10);
+          });
+          responseData.largestChannels = sortedChannels.slice(0, 5);
+        } else if (operation === 'whois') {
+          // For whois operation, add the queried nick and structured data
+          responseData.queriedNick = this.getNodeParameter('whoisNick', i);
+          
+          // Extract key information for easy access
+          const whoisData = responseData.response;
+          responseData.userInfo = {
+            nick: whoisData.nick,
+            user: whoisData.user,
+            host: whoisData.host,
+            realName: whoisData.real_name,
+            server: whoisData.server,
+            serverInfo: whoisData.server_info,
+            isOperator: whoisData.operator || false,
+            idleSeconds: whoisData.idle_seconds ? parseInt(whoisData.idle_seconds, 10) : null,
+            channels: whoisData.channels,
+          };
+          
+          // Parse channels into array for easier processing
+          if (whoisData.channels) {
+            const channelList = whoisData.channels.split(' ').filter((ch: string) => ch.trim());
+            responseData.userChannels = channelList.map((ch: string) => {
+              const modes = [];
+              let channel = ch;
+              
+              // Extract channel modes (@, +, %, etc.)
+              while (channel.length > 0 && ['@', '+', '%', '&', '~'].includes(channel[0])) {
+                modes.push(channel[0]);
+                channel = channel.substring(1);
+              }
+              
+              return {
+                channel,
+                modes: modes.join(''),
+                isOperator: modes.includes('@'),
+                hasVoice: modes.includes('+'),
+                isHalfOp: modes.includes('%'),
+              };
+            });
+          }
         }
 
         returnData.push({

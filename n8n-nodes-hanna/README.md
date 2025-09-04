@@ -19,6 +19,8 @@ The Hanna Bot node supports the following operations:
 - **Get Status**: Get bot connection status and channels
 - **Change Nick**: Change bot nickname
 - **Send Raw Command**: Send raw IRC command
+- **List Channels**: Get list of all IRC channels on the network
+- **Get User Info (WHOIS)**: Get detailed information about a specific user
 
 ## Credentials
 
