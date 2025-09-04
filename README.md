@@ -22,7 +22,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 
 ## 📋 Requirements
 
-- Go 1.21 or later
+- Go 1.24 or later
 - IRC server with TLS support
 - (Optional) TLS certificates for HTTPS API
 
@@ -31,10 +31,38 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 ### From Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/h4ks-com/hanna
 cd hanna
-go mod tidy
-go build -o hanna
+
+# Build from source (no need for go mod tidy - dependencies are all local)
+go build -o hanna .
+
+# Or build with specific flags for production
+CGO_ENABLED=0 go build -ldflags="-w -s" -o hanna .
+```
+
+### Docker Build
+
+```bash
+# Build using Docker
+docker build -t hanna-bot .
+
+# Or using docker-compose
+docker-compose build hanna-bot
+```
+
+### Project Structure
+
+The project is organized as a proper Go module:
+```
+hanna/
+├── main.go              # Main application entry point
+├── irc/                 # IRC client package
+│   ├── client.go        # IRC client implementation
+│   └── *_test.go        # Tests for IRC functionality
+├── go.mod               # Go module definition
+└── Dockerfile           # Docker build configuration
 ```
 
 ### Quick Start

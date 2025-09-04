@@ -1,4 +1,4 @@
-package main
+package irc
 
 import (
 	"encoding/json"
@@ -9,16 +9,16 @@ import (
 
 func TestChannelStateTracking(t *testing.T) {
 	// Create a new IRC client for testing
-	client := NewIRCClient()
+	client := NewClient()
 	client.setNick("TestBot")
 
 	t.Run("AddUserToChannel", func(t *testing.T) {
 		// Test adding users to a channel
-		client.addUserToChannel("#test", "user1", "")
-		client.addUserToChannel("#test", "user2", "o")
-		client.addUserToChannel("#test", "user3", "v")
+		client.AddUserToChannel("#test", "user1", "")
+		client.AddUserToChannel("#test", "user2", "o")
+		client.AddUserToChannel("#test", "user3", "v")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if len(states) != 1 {
 			t.Errorf("Expected 1 channel, got %d", len(states))
 		}
@@ -41,9 +41,9 @@ func TestChannelStateTracking(t *testing.T) {
 
 	t.Run("RemoveUserFromChannel", func(t *testing.T) {
 		// Remove a user from the channel
-		client.removeUserFromChannel("#test", "user2")
+		client.RemoveUserFromChannel("#test", "user2")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		testChannel := states["#test"]
 
 		expected := map[string]interface{}{
@@ -58,13 +58,13 @@ func TestChannelStateTracking(t *testing.T) {
 
 	t.Run("RemoveUserFromAllChannels", func(t *testing.T) {
 		// Add user to multiple channels
-		client.addUserToChannel("#test2", "user1", "o")
-		client.addUserToChannel("#test2", "user4", "")
+		client.AddUserToChannel("#test2", "user1", "o")
+		client.AddUserToChannel("#test2", "user4", "")
 
 		// Remove user1 from all channels
-		client.removeUserFromAllChannels("user1")
+		client.RemoveUserFromAllChannels("user1")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		
 		// user1 should be gone from both channels
 		if _, exists := states["#test"]["user1"]; exists {
@@ -85,9 +85,9 @@ func TestChannelStateTracking(t *testing.T) {
 
 	t.Run("ClearChannelState", func(t *testing.T) {
 		// Clear entire channel
-		client.clearChannelState("#test")
+		client.ClearChannelState("#test")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if _, exists := states["#test"]; exists {
 			t.Error("Channel #test should be cleared")
 		}
@@ -100,7 +100,7 @@ func TestChannelStateTracking(t *testing.T) {
 }
 
 func TestModeChangeParsing(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 
 	testCases := []struct {
 		name       string
@@ -145,7 +145,7 @@ func TestModeChangeParsing(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			changes := client.parseModeChange("#test", tc.modeString, tc.params)
+			changes := client.ParseModeChange("#test", tc.modeString, tc.params)
 			
 			// Handle nil vs empty slice comparison
 			if tc.expected == nil && len(changes) == 0 {
@@ -160,20 +160,20 @@ func TestModeChangeParsing(t *testing.T) {
 }
 
 func TestApplyModeChanges(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 
 	// Set up initial channel state
-	client.addUserToChannel("#test", "user1", "")
-	client.addUserToChannel("#test", "user2", "v")
-	client.addUserToChannel("#test", "user3", "o")
+	client.AddUserToChannel("#test", "user1", "")
+	client.AddUserToChannel("#test", "user2", "v")
+	client.AddUserToChannel("#test", "user3", "o")
 
 	t.Run("Grant operator mode", func(t *testing.T) {
 		changes := []UserModeChange{
 			{Adding: true, Mode: 'o', Nick: "user1"},
 		}
-		client.applyModeChanges("#test", changes)
+		client.ApplyModeChanges("#test", changes)
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if states["#test"]["user1"] != "o" {
 			t.Errorf("Expected user1 to have 'o' mode, got %v", states["#test"]["user1"])
 		}
@@ -183,9 +183,9 @@ func TestApplyModeChanges(t *testing.T) {
 		changes := []UserModeChange{
 			{Adding: true, Mode: 'v', Nick: "user3"},
 		}
-		client.applyModeChanges("#test", changes)
+		client.ApplyModeChanges("#test", changes)
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		modes := states["#test"]["user3"].(string)
 		if !containsMode(modes, 'o') || !containsMode(modes, 'v') {
 			t.Errorf("Expected user3 to have both 'o' and 'v' modes, got %v", modes)
@@ -196,9 +196,9 @@ func TestApplyModeChanges(t *testing.T) {
 		changes := []UserModeChange{
 			{Adding: false, Mode: 'v', Nick: "user2"},
 		}
-		client.applyModeChanges("#test", changes)
+		client.ApplyModeChanges("#test", changes)
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if states["#test"]["user2"] != nil && states["#test"]["user2"] != "" {
 			t.Errorf("Expected user2 to have no modes, got %v", states["#test"]["user2"])
 		}
@@ -208,9 +208,9 @@ func TestApplyModeChanges(t *testing.T) {
 		changes := []UserModeChange{
 			{Adding: false, Mode: 'o', Nick: "user3"},
 		}
-		client.applyModeChanges("#test", changes)
+		client.ApplyModeChanges("#test", changes)
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		modes := states["#test"]["user3"].(string)
 		if containsMode(modes, 'o') {
 			t.Errorf("Expected user3 to not have 'o' mode, got %v", modes)
@@ -222,7 +222,7 @@ func TestApplyModeChanges(t *testing.T) {
 }
 
 func TestIRCCommandHandling(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	client.setNick("TestBot")
 
 	t.Run("Handle JOIN command manually", func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestIRCCommandHandling(t *testing.T) {
 		client.channelsMu.Unlock()
 		
 		// Add to channel state
-		client.addUserToChannel(channel, nick, "")
+		client.AddUserToChannel(channel, nick, "")
 
 		// Check if we're in the channel list
 		client.channelsMu.RLock()
@@ -248,16 +248,16 @@ func TestIRCCommandHandling(t *testing.T) {
 		}
 
 		// Check if we're in the channel state
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if _, exists := states["#test"]["TestBot"]; !exists {
 			t.Error("TestBot should be in #test channel state")
 		}
 	})
 
 	t.Run("Handle other user JOIN manually", func(t *testing.T) {
-		client.addUserToChannel("#test", "user1", "")
+		client.AddUserToChannel("#test", "user1", "")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if _, exists := states["#test"]["user1"]; !exists {
 			t.Error("user1 should be in #test channel state")
 		}
@@ -265,7 +265,7 @@ func TestIRCCommandHandling(t *testing.T) {
 
 	t.Run("Handle NAMES reply parsing", func(t *testing.T) {
 		// Clear existing state
-		client.clearChannelState("#test")
+		client.ClearChannelState("#test")
 		
 		// Manually simulate NAMES processing
 		channel := "#test"
@@ -294,11 +294,11 @@ func TestIRCCommandHandling(t *testing.T) {
 			done:
 			
 			if nick != "" {
-				client.addUserToChannel(channel, nick, modes)
+				client.AddUserToChannel(channel, nick, modes)
 			}
 		}
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		testChannel := states["#test"]
 
 		expected := map[string]interface{}{
@@ -318,19 +318,19 @@ func TestIRCCommandHandling(t *testing.T) {
 		modeString := "+o"
 		params := []string{"user3"}
 		
-		changes := client.parseModeChange("#test", modeString, params)
-		client.applyModeChanges("#test", changes)
+		changes := client.ParseModeChange("#test", modeString, params)
+		client.ApplyModeChanges("#test", changes)
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if states["#test"]["user3"] != "o" {
 			t.Errorf("Expected user3 to have 'o' mode, got %v", states["#test"]["user3"])
 		}
 	})
 
 	t.Run("Handle PART command manually", func(t *testing.T) {
-		client.removeUserFromChannel("#test", "user2")
+		client.RemoveUserFromChannel("#test", "user2")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		if _, exists := states["#test"]["user2"]; exists {
 			t.Error("user2 should not be in #test after PART")
 		}
@@ -338,12 +338,12 @@ func TestIRCCommandHandling(t *testing.T) {
 
 	t.Run("Handle QUIT command manually", func(t *testing.T) {
 		// Add user1 to another channel first
-		client.addUserToChannel("#test2", "user1", "v")
+		client.AddUserToChannel("#test2", "user1", "v")
 		
 		// User quits - remove from all channels
-		client.removeUserFromAllChannels("user1")
+		client.RemoveUserFromAllChannels("user1")
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		
 		// user1 should be removed from all channels
 		if _, exists := states["#test"]["user1"]; exists {
@@ -368,7 +368,7 @@ func TestIRCCommandHandling(t *testing.T) {
 		}
 		client.channelStatesMu.Unlock()
 
-		states := client.getChannelStates()
+		states := client.GetChannelStates()
 		
 		// Old nick should be gone
 		if _, exists := states["#test"]["user3"]; exists {
@@ -383,17 +383,17 @@ func TestIRCCommandHandling(t *testing.T) {
 }
 
 func TestAPIStateEndpoint(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	client.setNick("TestBot")
 
 	// Set up some channel state
-	client.addUserToChannel("#lobby", "Valware", "")
-	client.addUserToChannel("#lobby", "handyc", "o")
-	client.addUserToChannel("#lobby", "mattf", "o")
-	client.addUserToChannel("#bots", "Hanna", "")
-	client.addUserToChannel("#bots", "Samantha", "vo")
+	client.AddUserToChannel("#lobby", "Valware", "")
+	client.AddUserToChannel("#lobby", "handyc", "o")
+	client.AddUserToChannel("#lobby", "mattf", "o")
+	client.AddUserToChannel("#bots", "Hanna", "")
+	client.AddUserToChannel("#bots", "Samantha", "vo")
 
-	states := client.getChannelStates()
+	states := client.GetChannelStates()
 
 	// Verify the format matches the expected JSON structure
 	expectedLobby := map[string]interface{}{

@@ -1,4 +1,4 @@
-package main
+package irc
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestPendingRequestManagement(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Test creating a pending request
 	req := client.createPendingRequest("list", "")
@@ -52,7 +52,7 @@ func TestPendingRequestManagement(t *testing.T) {
 }
 
 func TestWhoisRequestManagement(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Test creating a WHOIS request
 	req := client.createPendingRequest("whois", "testnick")
@@ -89,7 +89,7 @@ func TestWhoisRequestManagement(t *testing.T) {
 }
 
 func TestRequestTimeout(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Create a request with very short timeout for testing
 	req := client.createPendingRequest("test", "")
