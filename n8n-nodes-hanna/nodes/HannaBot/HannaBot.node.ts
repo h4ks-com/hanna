@@ -13,8 +13,8 @@ export class HannaBot implements INodeType {
     name: 'hannaBot',
     icon: 'fa:comments',
     group: ['transform'],
-    version: 1,
-    subtitle: '={{$parameter["operation"] === "whois" ? "WHOIS: " + $parameter["whoisNick"] : $parameter["operation"] === "list" ? "List Channels" : $parameter["operation"] + ": " + $parameter["target"] || "IRC Bot Operations"}}',
+    version: 2,
+    subtitle: '={{$parameter["operation"] === "whois" ? "WHOIS: " + $parameter["whoisNick"] : $parameter["operation"] === "user" ? "User: " + $parameter["userName"] : $parameter["operation"] === "channel" ? "Channel: " + $parameter["channelName"] : $parameter["operation"] === "list" ? "List Channels" : $parameter["operation"] + ": " + $parameter["target"] || "IRC Bot Operations"}}',
     description: 'Interact with Hanna IRC Bot via its REST API',
     usableAsTool: true,
     defaults: {
@@ -89,6 +89,48 @@ export class HannaBot implements INodeType {
             description: 'Get detailed information about a specific user',
             action: 'Get user information',
           },
+          {
+            name: 'Get Server Info',
+            value: 'server',
+            description: 'Get IRC server information and capabilities',
+            action: 'Get server information',
+          },
+          {
+            name: 'Get All Users',
+            value: 'users',
+            description: 'Get information about all known users',
+            action: 'Get all users',
+          },
+          {
+            name: 'Get Specific User',
+            value: 'user',
+            description: 'Get detailed information about a specific user',
+            action: 'Get user details',
+          },
+          {
+            name: 'Get Statistics',
+            value: 'stats',
+            description: 'Get bot statistics and metrics',
+            action: 'Get statistics',
+          },
+          {
+            name: 'Get Errors',
+            value: 'errors',
+            description: 'Get recent IRC errors and issues',
+            action: 'Get error log',
+          },
+          {
+            name: 'Get Channel Info',
+            value: 'channel',
+            description: 'Get detailed information about a specific channel',
+            action: 'Get channel information',
+          },
+          {
+            name: 'Get Comprehensive State',
+            value: 'comprehensive',
+            description: 'Get complete bot state including all channels, users, and server info',
+            action: 'Get comprehensive state',
+          },
         ],
         default: 'send',
         required: true,
@@ -120,6 +162,36 @@ export class HannaBot implements INodeType {
         displayOptions: {
           show: {
             operation: ['whois'],
+          },
+        },
+      },
+      // Nick field for user operation
+      {
+        displayName: 'Username',
+        name: 'userName',
+        type: 'string',
+        default: '',
+        placeholder: 'username',
+        required: true,
+        description: 'IRC username to get detailed information about',
+        displayOptions: {
+          show: {
+            operation: ['user'],
+          },
+        },
+      },
+      // Channel field for channel operation
+      {
+        displayName: 'Channel Name',
+        name: 'channelName',
+        type: 'string',
+        default: '',
+        placeholder: '#general',
+        required: true,
+        description: 'IRC channel name to get information about (include #)',
+        displayOptions: {
+          show: {
+            operation: ['channel'],
           },
         },
       },
@@ -275,6 +347,47 @@ export class HannaBot implements INodeType {
             };
             break;
 
+          case 'server':
+            endpoint = '/api/server';
+            method = 'GET';
+            break;
+
+          case 'users':
+            endpoint = '/api/users';
+            method = 'GET';
+            break;
+
+          case 'user':
+            endpoint = '/api/user';
+            method = 'POST';
+            body = {
+              nick: this.getNodeParameter('userName', i) as string,
+            };
+            break;
+
+          case 'stats':
+            endpoint = '/api/stats';
+            method = 'GET';
+            break;
+
+          case 'errors':
+            endpoint = '/api/errors';
+            method = 'GET';
+            break;
+
+          case 'channel':
+            endpoint = '/api/channel';
+            method = 'POST';
+            body = {
+              channel: this.getNodeParameter('channelName', i) as string,
+            };
+            break;
+
+          case 'comprehensive':
+            endpoint = '/api/comprehensive-state';
+            method = 'GET';
+            break;
+
           default:
             throw new NodeOperationError(this.getNode(), `Invalid operation: ${operation}`, {
               itemIndex: i,
@@ -366,6 +479,125 @@ export class HannaBot implements INodeType {
               };
             });
           }
+        } else if (operation === 'server') {
+          // For server operation, structure server information
+          const serverData = responseData.response;
+          responseData.serverInfo = {
+            name: serverData.name,
+            version: serverData.version,
+            createdAt: serverData.created_at,
+            network: serverData.network,
+            capabilities: serverData.capabilities || [],
+            motd: serverData.motd || [],
+          };
+        } else if (operation === 'users') {
+          // For users operation, provide user statistics
+          const usersData = responseData.response;
+          responseData.userCount = Object.keys(usersData).length;
+          responseData.users = usersData;
+          
+          // Add summary statistics
+          let operatorCount = 0;
+          let awayCount = 0;
+          Object.values(usersData).forEach((user: any) => {
+            if (user.is_operator) operatorCount++;
+            if (user.is_away) awayCount++;
+          });
+          responseData.operatorCount = operatorCount;
+          responseData.awayCount = awayCount;
+        } else if (operation === 'user') {
+          // For user operation, add queried username and structured data
+          responseData.queriedUser = this.getNodeParameter('userName', i);
+          const userData = responseData.response;
+          responseData.userDetails = {
+            nick: userData.nick,
+            user: userData.user,
+            host: userData.host,
+            realName: userData.real_name,
+            isAway: userData.is_away || false,
+            awayMessage: userData.away_msg || '',
+            channels: userData.channels || [],
+            server: userData.server || '',
+            idleTime: userData.idle_time || 0,
+            isOperator: userData.is_operator || false,
+          };
+        } else if (operation === 'stats') {
+          // For stats operation, structure statistics data
+          const statsData = responseData.response;
+          responseData.statistics = {
+            channelCount: statsData.channels || 0,
+            userCount: statsData.users || 0,
+            connectionTime: statsData.connection_time || '',
+            messagesReceived: statsData.messages_received || 0,
+            messagesSent: statsData.messages_sent || 0,
+            lastActivity: statsData.last_activity || '',
+          };
+        } else if (operation === 'errors') {
+          // For errors operation, structure error data
+          const errorsData = responseData.response;
+          responseData.errorCount = errorsData.length || 0;
+          responseData.errors = errorsData;
+          
+          // Group errors by type
+          const errorsByType: { [key: string]: any[] } = {};
+          errorsData.forEach((error: any) => {
+            const type = error.code ? `${error.code}` : 'unknown';
+            if (!errorsByType[type]) errorsByType[type] = [];
+            errorsByType[type].push(error);
+          });
+          responseData.errorsByType = errorsByType;
+        } else if (operation === 'channel') {
+          // For channel operation, add queried channel and structured data
+          responseData.queriedChannel = this.getNodeParameter('channelName', i);
+          const channelData = responseData.response;
+          responseData.channelInfo = {
+            name: channelData.name,
+            topic: channelData.topic || '',
+            userCount: channelData.user_count || 0,
+            users: channelData.users || [],
+            modes: channelData.modes || '',
+            created: channelData.created || '',
+          };
+          
+          // Parse user list with modes
+          if (channelData.users) {
+            responseData.channelUsers = channelData.users.map((user: string) => {
+              const modes = [];
+              let username = user;
+              
+              // Extract user modes (@, +, %, etc.)
+              while (username.length > 0 && ['@', '+', '%', '&', '~'].includes(username[0])) {
+                modes.push(username[0]);
+                username = username.substring(1);
+              }
+              
+              return {
+                nick: username,
+                modes: modes.join(''),
+                isOperator: modes.includes('@'),
+                hasVoice: modes.includes('+'),
+                isHalfOp: modes.includes('%'),
+              };
+            });
+          }
+        } else if (operation === 'comprehensive') {
+          // For comprehensive operation, structure all state data
+          const compData = responseData.response;
+          responseData.comprehensiveState = {
+            server: compData.server || {},
+            channels: compData.channels || {},
+            users: compData.users || {},
+            errors: compData.errors || [],
+            statistics: compData.statistics || {},
+            lastUpdated: compData.last_updated || new Date().toISOString(),
+          };
+          
+          // Add summary counts
+          responseData.summary = {
+            channelCount: Object.keys(compData.channels || {}).length,
+            userCount: Object.keys(compData.users || {}).length,
+            errorCount: (compData.errors || []).length,
+          };
         }
 
         returnData.push({

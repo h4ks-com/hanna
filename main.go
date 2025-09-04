@@ -30,12 +30,15 @@ import (
     "os"
     "os/signal"
     "regexp"
+    "strconv"
     "strings"
     "sync"
     "sync/atomic"
     "syscall"
     "time"
 )
+
+const Version = "2.0.0"
 
 // Characters that should be ignored when surrounding the bot nick
 var ignoreChars = []string{"/"}
@@ -104,8 +107,109 @@ type ChannelUser struct {
 
 // ChannelState represents the state of an IRC channel
 type ChannelState struct {
-    Name  string                 `json:"name"`
-    Users map[string]string      `json:"users"` // nick -> modes (e.g. "ov", "o", "v", or "" for no modes)
+    Name         string            `json:"name"`
+    Users        map[string]string `json:"users"`         // nick -> modes (e.g. "ov", "o", "v", or "" for no modes)
+    Topic        string            `json:"topic"`         // current topic
+    TopicSetBy   string            `json:"topic_set_by"`  // who set the topic
+    TopicSetTime int64             `json:"topic_set_time"` // when topic was set (unix timestamp)
+    CreatedTime  int64             `json:"created_time"`  // channel creation time (unix timestamp)
+    Modes        string            `json:"modes"`         // channel modes (e.g. "+nt")
+    ModeParams   []string          `json:"mode_params"`   // parameters for modes that take them
+    BanList      []BanListEntry    `json:"ban_list"`      // channel ban list
+    InviteList   []InviteListEntry `json:"invite_list"`   // channel invite list
+    ExceptList   []ExceptListEntry `json:"except_list"`   // channel exception list
+    URL          string            `json:"url,omitempty"` // channel URL if set
+    SpecialInfo  map[string]string `json:"special_info,omitempty"` // other special channel info
+}
+
+// BanListEntry represents a ban list entry
+type BanListEntry struct {
+    Mask      string `json:"mask"`
+    SetBy     string `json:"set_by"`
+    SetTime   int64  `json:"set_time"`
+    Reason    string `json:"reason,omitempty"`
+}
+
+// InviteListEntry represents an invite list entry
+type InviteListEntry struct {
+    Mask      string `json:"mask"`
+    SetBy     string `json:"set_by"`
+    SetTime   int64  `json:"set_time"`
+}
+
+// ExceptListEntry represents an exception list entry
+type ExceptListEntry struct {
+    Mask      string `json:"mask"`
+    SetBy     string `json:"set_by"`
+    SetTime   int64  `json:"set_time"`
+}
+
+// ServerInfo represents information about the IRC server
+type ServerInfo struct {
+    Name         string            `json:"name"`
+    Version      string            `json:"version"`
+    UserModes    string            `json:"user_modes"`
+    ChannelModes string            `json:"channel_modes"`
+    Created      string            `json:"created"`
+    ISupportTags map[string]string `json:"isupport_tags"` // RPL_ISUPPORT (005) tags
+    AdminInfo    AdminInfo         `json:"admin_info"`
+    MOTD         []string          `json:"motd"`
+    LocalUsers   int               `json:"local_users"`
+    GlobalUsers  int               `json:"global_users"`
+    MaxLocalUsers int              `json:"max_local_users"`
+    MaxGlobalUsers int             `json:"max_global_users"`
+    Operators    int               `json:"operators"`
+    UnknownConns int               `json:"unknown_connections"`
+    Channels     int               `json:"channels_formed"`
+}
+
+// AdminInfo represents server administrator information
+type AdminInfo struct {
+    Server   string `json:"server"`
+    Location1 string `json:"location1"`
+    Location2 string `json:"location2"`
+    Email    string `json:"email"`
+}
+
+// UserInfo represents comprehensive information about a user
+type UserInfo struct {
+    Nick           string            `json:"nick"`
+    User           string            `json:"user"`
+    Host           string            `json:"host"`
+    RealName       string            `json:"real_name"`
+    Server         string            `json:"server"`
+    ServerInfo     string            `json:"server_info"`
+    Account        string            `json:"account,omitempty"`        // services account (330)
+    IsOperator     bool              `json:"is_operator"`             // global IRC operator
+    IsAway         bool              `json:"is_away"`
+    AwayMessage    string            `json:"away_message,omitempty"`
+    IdleTime       int               `json:"idle_time"`               // seconds idle
+    SignonTime     int64             `json:"signon_time"`             // when they signed on
+    Channels       []string          `json:"channels"`                // list of channels
+    Modes          string            `json:"modes"`                   // user modes
+    IsSecure       bool              `json:"is_secure"`               // using SSL/TLS (671)
+    CertFingerprint string           `json:"cert_fingerprint,omitempty"` // SSL cert fingerprint (276)
+    ActualHost     string            `json:"actual_host,omitempty"`   // actual host/IP (338)
+    CountryCode    string            `json:"country_code,omitempty"`  // country code (344)
+    Country        string            `json:"country,omitempty"`       // country name (344)
+    ASN            string            `json:"asn,omitempty"`           // AS number (569)
+    IsBot          bool              `json:"is_bot"`                  // marked as bot (335)
+    WebIRCGateway  string            `json:"webirc_gateway,omitempty"` // WebIRC gateway info
+    SpecialInfo    map[string]string `json:"special_info,omitempty"`  // other special info
+}
+
+// StatEntry represents a server statistics entry
+type StatEntry struct {
+    Type   string            `json:"type"`
+    Data   map[string]string `json:"data"`
+}
+
+// IRCError represents an IRC error response
+type IRCError struct {
+    Code    string `json:"code"`
+    Target  string `json:"target,omitempty"`
+    Message string `json:"message"`
+    Time    int64  `json:"time"`
 }
 
 // UserModeChange represents a mode change operation
@@ -163,6 +267,22 @@ type IRCClient struct {
     channelStatesMu sync.RWMutex
     channelStates   map[string]*ChannelState // channel name (lowercase) -> state
 
+    // User information tracking
+    userInfoMu sync.RWMutex
+    userInfo   map[string]*UserInfo // nick (lowercase) -> user info
+
+    // Server information tracking
+    serverInfoMu sync.RWMutex
+    serverInfo   *ServerInfo
+
+    // Statistics tracking
+    statsMu sync.RWMutex
+    stats   []StatEntry
+
+    // Error tracking (recent errors)
+    errorsMu sync.RWMutex
+    errors   []IRCError
+
     // SASL state tracking
     saslInProgress atomic.Bool
     saslComplete   chan bool
@@ -198,6 +318,10 @@ func NewIRCClient() *IRCClient {
         saslPass:    os.Getenv("SASL_PASS"),
         channels:    make(map[string]struct{}),
         channelStates: make(map[string]*ChannelState),
+        userInfo:     make(map[string]*UserInfo),
+        serverInfo:   &ServerInfo{ISupportTags: make(map[string]string)},
+        stats:        make([]StatEntry, 0),
+        errors:       make([]IRCError, 0),
         saslComplete: make(chan bool, 1),
         pending:     make(map[string]*PendingRequest),
     }
@@ -246,8 +370,13 @@ func (c *IRCClient) addUserToChannel(channel, nick string, modes string) {
     channel = strings.ToLower(channel)
     if c.channelStates[channel] == nil {
         c.channelStates[channel] = &ChannelState{
-            Name:  channel,
-            Users: make(map[string]string),
+            Name:        channel,
+            Users:       make(map[string]string),
+            BanList:     make([]BanListEntry, 0),
+            InviteList:  make([]InviteListEntry, 0),
+            ExceptList:  make([]ExceptListEntry, 0),
+            ModeParams:  make([]string, 0),
+            SpecialInfo: make(map[string]string),
         }
     }
     c.channelStates[channel].Users[nick] = modes
@@ -278,6 +407,187 @@ func (c *IRCClient) clearChannelState(channel string) {
     
     channel = strings.ToLower(channel)
     delete(c.channelStates, channel)
+}
+
+// Helper functions for user information tracking
+func (c *IRCClient) updateUserInfo(nick string, updateFunc func(*UserInfo)) {
+    c.userInfoMu.Lock()
+    defer c.userInfoMu.Unlock()
+    
+    nick = strings.ToLower(nick)
+    if c.userInfo[nick] == nil {
+        c.userInfo[nick] = &UserInfo{
+            Nick:        nick,
+            SpecialInfo: make(map[string]string),
+        }
+    }
+    updateFunc(c.userInfo[nick])
+}
+
+func (c *IRCClient) getUserInfo(nick string) *UserInfo {
+    c.userInfoMu.RLock()
+    defer c.userInfoMu.RUnlock()
+    
+    nick = strings.ToLower(nick)
+    if info := c.userInfo[nick]; info != nil {
+        // Return a copy to avoid race conditions
+        copyInfo := *info
+        copySpecial := make(map[string]string)
+        for k, v := range info.SpecialInfo {
+            copySpecial[k] = v
+        }
+        copyInfo.SpecialInfo = copySpecial
+        return &copyInfo
+    }
+    return nil
+}
+
+func (c *IRCClient) removeUserInfo(nick string) {
+    c.userInfoMu.Lock()
+    defer c.userInfoMu.Unlock()
+    
+    nick = strings.ToLower(nick)
+    delete(c.userInfo, nick)
+}
+
+// Helper functions for server information tracking
+func (c *IRCClient) updateServerInfo(updateFunc func(*ServerInfo)) {
+    c.serverInfoMu.Lock()
+    defer c.serverInfoMu.Unlock()
+    updateFunc(c.serverInfo)
+}
+
+func (c *IRCClient) getServerInfo() *ServerInfo {
+    c.serverInfoMu.RLock()
+    defer c.serverInfoMu.RUnlock()
+    
+    // Return a copy
+    info := *c.serverInfo
+    
+    // Deep copy maps
+    info.ISupportTags = make(map[string]string)
+    for k, v := range c.serverInfo.ISupportTags {
+        info.ISupportTags[k] = v
+    }
+    
+    // Copy MOTD slice
+    info.MOTD = make([]string, len(c.serverInfo.MOTD))
+    copy(info.MOTD, c.serverInfo.MOTD)
+    
+    return &info
+}
+
+// Helper functions for statistics tracking
+func (c *IRCClient) addStatEntry(statType string, data map[string]string) {
+    c.statsMu.Lock()
+    defer c.statsMu.Unlock()
+    
+    c.stats = append(c.stats, StatEntry{
+        Type: statType,
+        Data: data,
+    })
+    
+    // Keep only the last 1000 stat entries to prevent memory growth
+    if len(c.stats) > 1000 {
+        c.stats = c.stats[len(c.stats)-1000:]
+    }
+}
+
+func (c *IRCClient) getStats() []StatEntry {
+    c.statsMu.RLock()
+    defer c.statsMu.RUnlock()
+    
+    // Return a copy
+    stats := make([]StatEntry, len(c.stats))
+    copy(stats, c.stats)
+    return stats
+}
+
+// Helper functions for error tracking
+func (c *IRCClient) addError(code, target, message string) {
+    c.errorsMu.Lock()
+    defer c.errorsMu.Unlock()
+    
+    c.errors = append(c.errors, IRCError{
+        Code:    code,
+        Target:  target,
+        Message: message,
+        Time:    time.Now().Unix(),
+    })
+    
+    // Keep only the last 100 errors to prevent memory growth
+    if len(c.errors) > 100 {
+        c.errors = c.errors[len(c.errors)-100:]
+    }
+}
+
+func (c *IRCClient) getRecentErrors() []IRCError {
+    c.errorsMu.RLock()
+    defer c.errorsMu.RUnlock()
+    
+    // Return a copy
+    errors := make([]IRCError, len(c.errors))
+    copy(errors, c.errors)
+    return errors
+}
+
+func (c *IRCClient) getAllUsers() map[string]*UserInfo {
+    c.userInfoMu.RLock()
+    defer c.userInfoMu.RUnlock()
+    
+    users := make(map[string]*UserInfo)
+    for nick, info := range c.userInfo {
+        // Create a copy
+        copyInfo := *info
+        copySpecial := make(map[string]string)
+        for k, v := range info.SpecialInfo {
+            copySpecial[k] = v
+        }
+        copyInfo.SpecialInfo = copySpecial
+        users[nick] = &copyInfo
+    }
+    return users
+}
+
+// parseTime parses various time formats used in IRC
+func parseIRCTime(timeStr string) int64 {
+    // Try parsing as Unix timestamp first
+    if timestamp, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+        return timestamp
+    }
+    
+    // Try parsing common IRC date formats
+    formats := []string{
+        time.RFC1123,
+        time.RFC1123Z,
+        "Mon Jan 2 15:04:05 2006",
+        "Mon Jan 2 15:04:05 MST 2006",
+        "Jan 2 15:04:05 2006",
+        "2006-01-02 15:04:05",
+    }
+    
+    for _, format := range formats {
+        if t, err := time.Parse(format, timeStr); err == nil {
+            return t.Unix()
+        }
+    }
+    
+    return time.Now().Unix() // fallback to current time
+}
+
+// extractServerName extracts server name from IRC prefix
+func extractServerName(prefix string) string {
+    if prefix == "" {
+        return ""
+    }
+    
+    // If prefix contains '!' it's a user, extract server differently
+    if strings.Contains(prefix, "!") {
+        return ""
+    }
+    
+    // If it's just a server name, return it
+    return prefix
 }
 
 // parseModeChange parses IRC mode strings like "+oo nick1 nick2" or "-v nick"
@@ -615,6 +925,7 @@ func (c *IRCClient) handleLine(line string) {
         oldNick := c.Nick()
         n := oldNick + "_"
         log.Printf("Nick %s is in use, switching to %s", oldNick, n)
+        c.addError(cmd, oldNick, trailing) // Add error tracking
         c.setNick(n)
         c.rawf("NICK %s", n)
     case "CAP":
@@ -651,6 +962,13 @@ func (c *IRCClient) handleLine(line string) {
         }
     case "903": // SASL success
         log.Printf("SASL authentication successful")
+        // Track this in user info for our own nick
+        c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+            if info.SpecialInfo == nil {
+                info.SpecialInfo = make(map[string]string)
+            }
+            info.SpecialInfo["sasl_authenticated"] = "true"
+        })
         c.raw("CAP END")
         if c.saslInProgress.Load() {
             c.saslInProgress.Store(false)
@@ -661,6 +979,7 @@ func (c *IRCClient) handleLine(line string) {
         }
     case "904", "905": // SASL fail/abort
         log.Printf("SASL authentication failed (code %s)", cmd)
+        c.addError(cmd, "", trailing) // Add error tracking
         c.raw("CAP END")
         if c.saslInProgress.Load() {
             c.saslInProgress.Store(false)
@@ -1017,6 +1336,668 @@ func (c *IRCClient) handleLine(line string) {
                 log.Printf("WHOIS channels for %s: %s", targetNick, trailing)
             }
         }
+    // RFC1459 and Extended IRC Numerics - Comprehensive State Tracking
+    case "002": // RPL_YOURHOST
+        // :server 002 nick :Your host is servername, running version
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.Name = extractServerName(prefix)
+            // Parse version from message if possible
+            if versionMatch := regexp.MustCompile(`running version (.+)$`).FindStringSubmatch(trailing); len(versionMatch) > 1 {
+                info.Version = versionMatch[1]
+            }
+        })
+    case "003": // RPL_CREATED
+        // :server 003 nick :This server was created date
+        c.updateServerInfo(func(info *ServerInfo) {
+            if createdMatch := regexp.MustCompile(`created (.+)$`).FindStringSubmatch(trailing); len(createdMatch) > 1 {
+                info.Created = createdMatch[1]
+            }
+        })
+    case "004": // RPL_MYINFO
+        // :server 004 nick servername version usermodes chanmodes [chanmodes_with_param]
+        if len(args) >= 4 {
+            c.updateServerInfo(func(info *ServerInfo) {
+                info.Name = args[1]
+                info.Version = args[2]
+                info.UserModes = args[3]
+                if len(args) > 4 {
+                    info.ChannelModes = args[4]
+                }
+            })
+        }
+    case "005": // RPL_ISUPPORT
+        // :server 005 nick TOKEN1=value TOKEN2 :are supported by this server
+        if len(args) >= 2 {
+            c.updateServerInfo(func(info *ServerInfo) {
+                // Parse all args except the first (nick) and last (usually a description)
+                for i := 1; i < len(args); i++ {
+                    token := args[i]
+                    if strings.Contains(token, "=") {
+                        parts := strings.SplitN(token, "=", 2)
+                        info.ISupportTags[parts[0]] = parts[1]
+                    } else {
+                        info.ISupportTags[token] = ""
+                    }
+                }
+            })
+        }
+    case "251": // RPL_LUSERCLIENT
+        // :server 251 nick :There are <int> users and <int> invisible on <int> servers
+        if matches := regexp.MustCompile(`(\d+) users and (\d+) invisible on (\d+) servers`).FindStringSubmatch(trailing); len(matches) > 3 {
+            if totalUsers, err := strconv.Atoi(matches[1]); err == nil {
+                if invisible, err := strconv.Atoi(matches[2]); err == nil {
+                    c.updateServerInfo(func(info *ServerInfo) {
+                        info.GlobalUsers = totalUsers + invisible
+                    })
+                }
+            }
+        }
+    case "252": // RPL_LUSEROP
+        // :server 252 nick <int> :operator(s) online
+        if len(args) >= 2 {
+            if ops, err := strconv.Atoi(args[1]); err == nil {
+                c.updateServerInfo(func(info *ServerInfo) {
+                    info.Operators = ops
+                })
+            }
+        }
+    case "253": // RPL_LUSERUNKNOWN
+        // :server 253 nick <int> :unknown connection(s)
+        if len(args) >= 2 {
+            if unknown, err := strconv.Atoi(args[1]); err == nil {
+                c.updateServerInfo(func(info *ServerInfo) {
+                    info.UnknownConns = unknown
+                })
+            }
+        }
+    case "254": // RPL_LUSERCHANNELS
+        // :server 254 nick <int> :channels formed
+        if len(args) >= 2 {
+            if channels, err := strconv.Atoi(args[1]); err == nil {
+                c.updateServerInfo(func(info *ServerInfo) {
+                    info.Channels = channels
+                })
+            }
+        }
+    case "255": // RPL_LUSERME
+        // :server 255 nick :I have <int> clients and <int> servers
+        if matches := regexp.MustCompile(`I have (\d+) clients and (\d+) servers`).FindStringSubmatch(trailing); len(matches) > 2 {
+            if clients, err := strconv.Atoi(matches[1]); err == nil {
+                c.updateServerInfo(func(info *ServerInfo) {
+                    info.LocalUsers = clients
+                })
+            }
+        }
+    case "256": // RPL_ADMINME
+        // :server 256 nick server :Administrative info
+        if len(args) >= 2 {
+            c.updateServerInfo(func(info *ServerInfo) {
+                info.AdminInfo.Server = args[1]
+            })
+        }
+    case "257": // RPL_ADMINLOC1
+        // :server 257 nick :admin_location
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.AdminInfo.Location1 = trailing
+        })
+    case "258": // RPL_ADMINLOC2
+        // :server 258 nick :admin_location
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.AdminInfo.Location2 = trailing
+        })
+    case "259": // RPL_ADMINEMAIL
+        // :server 259 nick :email_address
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.AdminInfo.Email = trailing
+        })
+    case "265": // RPL_LOCALUSERS
+        // :server 265 nick [<u> <m>] :Current local users <u>, max <m>
+        if len(args) >= 3 {
+            if current, err := strconv.Atoi(args[1]); err == nil {
+                if max, err := strconv.Atoi(args[2]); err == nil {
+                    c.updateServerInfo(func(info *ServerInfo) {
+                        info.LocalUsers = current
+                        info.MaxLocalUsers = max
+                    })
+                }
+            }
+        }
+    case "266": // RPL_GLOBALUSERS
+        // :server 266 nick [<u> <m>] :Current global users <u>, max <m>
+        if len(args) >= 3 {
+            if current, err := strconv.Atoi(args[1]); err == nil {
+                if max, err := strconv.Atoi(args[2]); err == nil {
+                    c.updateServerInfo(func(info *ServerInfo) {
+                        info.GlobalUsers = current
+                        info.MaxGlobalUsers = max
+                    })
+                }
+            }
+        }
+    case "276": // RPL_WHOISCERTFP
+        // :server 276 nick target :has client certificate fingerprint fingerprint
+        if len(args) >= 2 {
+            targetNick := args[1]
+            if fpMatch := regexp.MustCompile(`fingerprint (.+)$`).FindStringSubmatch(trailing); len(fpMatch) > 1 {
+                c.updateUserInfo(targetNick, func(info *UserInfo) {
+                    info.CertFingerprint = fpMatch[1]
+                })
+            }
+        }
+    case "301": // RPL_AWAY
+        // :server 301 nick target :away_message
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.IsAway = true
+                info.AwayMessage = trailing
+            })
+        }
+    case "305": // RPL_UNAWAY
+        // :server 305 nick :info
+        c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+            info.IsAway = false
+            info.AwayMessage = ""
+        })
+    case "306": // RPL_NOWAWAY
+        // :server 306 nick :info
+        c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+            info.IsAway = true
+        })
+    case "307": // RPL_WHOISREGNICK / RPL_WHOISSERVICE
+        // :server 307 nick target :info
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["registered"] = "true"
+            })
+        }
+    case "308": // RPL_WHOISADMIN / RPL_RULESSTART
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["admin"] = "true"
+            })
+        }
+    case "309": // RPL_ENDOFRULES / RPL_WHOISSERVICE
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["service"] = "true"
+            })
+        }
+    case "310": // RPL_WHOISHELPOP / RPL_WHOISSERVICE
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["helpop"] = "true"
+            })
+        }
+    case "314": // RPL_WHOWASUSER
+        // :server 314 nick target user host * :real_name
+        if len(args) >= 5 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.User = args[2]
+                info.Host = args[3]
+                info.RealName = trailing
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["whowas"] = "true"
+            })
+        }
+    case "320": // RPL_WHOISSPECIAL / RPL_WHOIS_HIDDEN
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["special"] = trailing
+            })
+        }
+    case "324": // RPL_CHANNELMODEIS
+        // :server 324 nick channel mode mode_params
+        if len(args) >= 3 {
+            channel := strings.ToLower(args[1])
+            modes := args[2]
+            var params []string
+            if len(args) > 3 {
+                params = args[3:]
+            }
+            
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].Modes = modes
+            c.channelStates[channel].ModeParams = params
+            c.channelStatesMu.Unlock()
+        }
+    case "325": // RPL_UNIQOPIS / RPL_CHANNELPASSIS / RPL_WHOISWEBIRC
+        if len(args) >= 3 && strings.HasPrefix(args[1], "#") {
+            // Channel related
+            channel := strings.ToLower(args[1])
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] != nil {
+                if c.channelStates[channel].SpecialInfo == nil {
+                    c.channelStates[channel].SpecialInfo = make(map[string]string)
+                }
+                c.channelStates[channel].SpecialInfo["unique_op"] = args[2]
+            }
+            c.channelStatesMu.Unlock()
+        } else if len(args) >= 2 {
+            // User related (WHOISWEBIRC)
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["webirc"] = "true"
+            })
+        }
+    case "328": // RPL_CHANNEL_URL
+        // :server 328 nick channel :url
+        if len(args) >= 2 {
+            channel := strings.ToLower(args[1])
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].URL = trailing
+            c.channelStatesMu.Unlock()
+        }
+    case "329": // RPL_CREATIONTIME
+        // :server 329 nick channel timestamp
+        if len(args) >= 3 {
+            channel := strings.ToLower(args[1])
+            if timestamp, err := strconv.ParseInt(args[2], 10, 64); err == nil {
+                c.channelStatesMu.Lock()
+                if c.channelStates[channel] == nil {
+                    c.channelStates[channel] = &ChannelState{
+                        Name:        channel,
+                        Users:       make(map[string]string),
+                        BanList:     make([]BanListEntry, 0),
+                        InviteList:  make([]InviteListEntry, 0),
+                        ExceptList:  make([]ExceptListEntry, 0),
+                        ModeParams:  make([]string, 0),
+                        SpecialInfo: make(map[string]string),
+                    }
+                }
+                c.channelStates[channel].CreatedTime = timestamp
+                c.channelStatesMu.Unlock()
+            }
+        }
+    case "330": // RPL_WHOISACCOUNT / RPL_WHOISLOGGEDIN
+        // :server 330 nick target authname :info
+        if len(args) >= 3 {
+            targetNick := args[1]
+            account := args[2]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.Account = account
+            })
+        }
+    case "331": // RPL_NOTOPIC
+        // :server 331 nick channel :info
+        if len(args) >= 2 {
+            channel := strings.ToLower(args[1])
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].Topic = ""
+            c.channelStatesMu.Unlock()
+        }
+    case "332": // RPL_TOPIC
+        // :server 332 nick channel :topic
+        if len(args) >= 2 {
+            channel := strings.ToLower(args[1])
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].Topic = trailing
+            c.channelStatesMu.Unlock()
+        }
+    case "333": // RPL_TOPICWHOTIME
+        // :server 333 nick channel nick!user@host timestamp
+        if len(args) >= 4 {
+            channel := strings.ToLower(args[1])
+            topicSetter := args[2]
+            if timestamp, err := strconv.ParseInt(args[3], 10, 64); err == nil {
+                c.channelStatesMu.Lock()
+                if c.channelStates[channel] == nil {
+                    c.channelStates[channel] = &ChannelState{
+                        Name:        channel,
+                        Users:       make(map[string]string),
+                        BanList:     make([]BanListEntry, 0),
+                        InviteList:  make([]InviteListEntry, 0),
+                        ExceptList:  make([]ExceptListEntry, 0),
+                        ModeParams:  make([]string, 0),
+                        SpecialInfo: make(map[string]string),
+                    }
+                }
+                c.channelStates[channel].TopicSetBy = topicSetter
+                c.channelStates[channel].TopicSetTime = timestamp
+                c.channelStatesMu.Unlock()
+            }
+        }
+    case "335": // RPL_WHOISBOT
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.IsBot = true
+            })
+        }
+    case "338": // RPL_WHOISACTUALLY
+        // :server 338 nick target :is actually user@host ip
+        if len(args) >= 2 {
+            targetNick := args[1]
+            if actualMatch := regexp.MustCompile(`is actually (.+)`).FindStringSubmatch(trailing); len(actualMatch) > 1 {
+                c.updateUserInfo(targetNick, func(info *UserInfo) {
+                    info.ActualHost = actualMatch[1]
+                })
+            }
+        }
+    case "344": // RPL_WHOISCOUNTRY
+        // :server 344 nick target countrycode :is connecting from country
+        if len(args) >= 3 {
+            targetNick := args[1]
+            countryCode := args[2]
+            if countryMatch := regexp.MustCompile(`from (.+)$`).FindStringSubmatch(trailing); len(countryMatch) > 1 {
+                c.updateUserInfo(targetNick, func(info *UserInfo) {
+                    info.CountryCode = countryCode
+                    info.Country = countryMatch[1]
+                })
+            }
+        }
+    case "346": // RPL_INVITELIST
+        // :server 346 nick channel invitemask [who set-ts]
+        if len(args) >= 3 {
+            channel := strings.ToLower(args[1])
+            mask := args[2]
+            entry := InviteListEntry{Mask: mask}
+            
+            if len(args) > 3 {
+                entry.SetBy = args[3]
+            }
+            if len(args) > 4 {
+                entry.SetTime = parseIRCTime(args[4])
+            }
+            
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].InviteList = append(c.channelStates[channel].InviteList, entry)
+            c.channelStatesMu.Unlock()
+        }
+    case "347": // RPL_ENDOFINVITELIST
+        if len(args) >= 2 {
+            log.Printf("End of invite list for %s", args[1])
+        }
+    case "348": // RPL_EXCEPTLIST
+        // :server 348 nick channel exceptionmask [who set-ts]
+        if len(args) >= 3 {
+            channel := strings.ToLower(args[1])
+            mask := args[2]
+            entry := ExceptListEntry{Mask: mask}
+            
+            if len(args) > 3 {
+                entry.SetBy = args[3]
+            }
+            if len(args) > 4 {
+                entry.SetTime = parseIRCTime(args[4])
+            }
+            
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].ExceptList = append(c.channelStates[channel].ExceptList, entry)
+            c.channelStatesMu.Unlock()
+        }
+    case "349": // RPL_ENDOFEXCEPTLIST
+        if len(args) >= 2 {
+            log.Printf("End of exception list for %s", args[1])
+        }
+    case "350": // RPL_WHOISGATEWAY
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.WebIRCGateway = trailing
+            })
+        }
+    case "367": // RPL_BANLIST
+        // :server 367 nick channel banid [setter time_left|time_left :reason]
+        if len(args) >= 3 {
+            channel := strings.ToLower(args[1])
+            mask := args[2]
+            entry := BanListEntry{Mask: mask}
+            
+            if len(args) > 3 {
+                entry.SetBy = args[3]
+            }
+            if len(args) > 4 {
+                entry.SetTime = parseIRCTime(args[4])
+            }
+            if trailing != "" && trailing != args[2] {
+                entry.Reason = trailing
+            }
+            
+            c.channelStatesMu.Lock()
+            if c.channelStates[channel] == nil {
+                c.channelStates[channel] = &ChannelState{
+                    Name:        channel,
+                    Users:       make(map[string]string),
+                    BanList:     make([]BanListEntry, 0),
+                    InviteList:  make([]InviteListEntry, 0),
+                    ExceptList:  make([]ExceptListEntry, 0),
+                    ModeParams:  make([]string, 0),
+                    SpecialInfo: make(map[string]string),
+                }
+            }
+            c.channelStates[channel].BanList = append(c.channelStates[channel].BanList, entry)
+            c.channelStatesMu.Unlock()
+        }
+    case "368": // RPL_ENDOFBANLIST
+        if len(args) >= 2 {
+            log.Printf("End of ban list for %s", args[1])
+        }
+    case "371": // RPL_INFO
+        // :server 371 nick :string
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.MOTD = append(info.MOTD, trailing)
+        })
+    case "372": // RPL_MOTD
+        // :server 372 nick :- string
+        c.updateServerInfo(func(info *ServerInfo) {
+            // Remove leading "- " from MOTD lines
+            line := trailing
+            if strings.HasPrefix(line, "- ") {
+                line = line[2:]
+            }
+            info.MOTD = append(info.MOTD, line)
+        })
+    case "375": // RPL_MOTDSTART
+        // :server 375 nick :- server Message of the day -
+        c.updateServerInfo(func(info *ServerInfo) {
+            info.MOTD = []string{} // Clear existing MOTD
+        })
+    case "376": // RPL_ENDOFMOTD
+        log.Printf("End of MOTD")
+    case "378": // RPL_WHOISHOST
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["host_info"] = trailing
+            })
+        }
+    case "379": // RPL_WHOISMODES
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["user_modes"] = trailing
+            })
+        }
+    case "569": // RPL_WHOISASN
+        // :server 569 nick target asn :is connecting from AS#### [Org Name]
+        if len(args) >= 3 {
+            targetNick := args[1]
+            asn := args[2]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.ASN = asn
+            })
+        }
+    case "671": // RPL_WHOISSECURE / RPL_WHOISSSL
+        // :server 671 nick target :is using a secure connection
+        if len(args) >= 2 {
+            targetNick := args[1]
+            c.updateUserInfo(targetNick, func(info *UserInfo) {
+                info.IsSecure = true
+            })
+        }
+    // Error numerics - track for debugging/monitoring
+    case "400", "401", "402", "403", "404", "405", "406", "407", "408", "409",
+         "410", "411", "412", "413", "414", "415", "416", "417", "421", "422",
+         "423", "424", "431", "432", "436", "437", "441", "442", "443",
+         "444", "445", "446", "451", "461", "462", "463", "464", "465", "466",
+         "467", "471", "472", "473", "474", "475", "476", "477", "478", "481",
+         "482", "483", "484", "485", "491", "492", "501", "502":
+        target := ""
+        if len(args) >= 2 {
+            target = args[1]
+        }
+        c.addError(cmd, target, trailing)
+        log.Printf("IRC Error %s: %s", cmd, trailing)
+    // SASL Authentication numerics
+    case "900": // RPL_LOGGEDIN
+        // :server 900 nick nick!ident@host account :You are now logged in as user
+        if len(args) >= 3 {
+            account := args[2]
+            c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+                info.Account = account
+            })
+            log.Printf("SASL: Logged in as %s", account)
+        }
+    case "901": // RPL_LOGGEDOUT
+        // :server 901 nick nick!ident@host :You are now logged out
+        c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+            info.Account = ""
+        })
+        log.Printf("SASL: Logged out")
+    case "902": // ERR_NICKLOCKED
+        c.addError(cmd, c.Nick(), trailing)
+        log.Printf("SASL: Nick locked - %s", trailing)
+    case "906": // ERR_SASLABORTED
+        log.Printf("SASL: Authentication aborted")
+    case "907": // ERR_SASLALREADY
+        log.Printf("SASL: Already authenticated")
+    case "908": // RPL_SASLMECHS
+        log.Printf("SASL: Available mechanisms - %s", trailing)
+    // Statistics numerics - track for monitoring
+    case "211", "212", "213", "214", "215", "216", "217", "218", "219",
+         "241", "242", "243", "244", "245", "246", "247", "248", "249", "250":
+        statData := make(map[string]string)
+        statData["numeric"] = cmd
+        statData["raw"] = strings.Join(args, " ") + " :" + trailing
+        for i, arg := range args {
+            statData[fmt.Sprintf("arg%d", i)] = arg
+        }
+        if trailing != "" {
+            statData["trailing"] = trailing
+        }
+        c.addStatEntry("stats_"+cmd, statData)
+    // Additional user information numerics
+    case "396": // RPL_VISIBLEHOST / RPL_YOURDISPLAYEDHOST / RPL_HOSTHIDDEN
+        // :server 396 nick hostname :is now your visible host
+        if len(args) >= 2 {
+            hostname := args[1]
+            c.updateUserInfo(c.Nick(), func(info *UserInfo) {
+                if info.SpecialInfo == nil {
+                    info.SpecialInfo = make(map[string]string)
+                }
+                info.SpecialInfo["visible_host"] = hostname
+            })
+        }
+    // Default case for unhandled numerics - log for potential future implementation
+    default:
+        if len(cmd) == 3 && cmd[0] >= '0' && cmd[0] <= '9' {
+            log.Printf("Unhandled numeric %s: %s %s", cmd, strings.Join(args, " "), trailing)
+            // Store unknown numerics for analysis
+            statData := make(map[string]string)
+            statData["numeric"] = cmd
+            statData["args"] = strings.Join(args, " ")
+            statData["trailing"] = trailing
+            c.addStatEntry("unknown_numeric", statData)
+        }
     }
 }
 
@@ -1314,11 +2295,128 @@ func (a *API) routes() http.Handler {
         }
     })
 
+    mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+        writeJSON(w, 200, map[string]any{"version": Version, "name": "Hanna IRC Bot"})
+    })
+
     mux.HandleFunc("/api/state", a.auth(func(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, 200, map[string]any{
             "connected": a.bot.Connected(),
             "nick":      a.bot.Nick(),
             "channels":  a.bot.getChannelStates(),
+        })
+    }))
+
+    mux.HandleFunc("/api/server", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        serverInfo := a.bot.getServerInfo()
+        writeJSON(w, 200, serverInfo)
+    }))
+
+    mux.HandleFunc("/api/users", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        // Get all user information
+        a.bot.userInfoMu.RLock()
+        users := make(map[string]*UserInfo)
+        for nick, info := range a.bot.userInfo {
+            // Create a copy
+            copyInfo := *info
+            copySpecial := make(map[string]string)
+            for k, v := range info.SpecialInfo {
+                copySpecial[k] = v
+            }
+            copyInfo.SpecialInfo = copySpecial
+            users[nick] = &copyInfo
+        }
+        a.bot.userInfoMu.RUnlock()
+        
+        writeJSON(w, 200, map[string]any{
+            "users": users,
+            "count": len(users),
+        })
+    }))
+
+    mux.HandleFunc("/api/user", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        var in struct{ Nick string `json:"nick"` }
+        if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Nick == "" {
+            writeJSON(w, 400, errorResponse{"nick required"})
+            return
+        }
+        
+        userInfo := a.bot.getUserInfo(in.Nick)
+        if userInfo == nil {
+            writeJSON(w, 404, errorResponse{"user not found"})
+            return
+        }
+        
+        writeJSON(w, 200, userInfo)
+    }))
+
+    mux.HandleFunc("/api/stats", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        stats := a.bot.getStats()
+        writeJSON(w, 200, map[string]any{
+            "stats": stats,
+            "count": len(stats),
+        })
+    }))
+
+    mux.HandleFunc("/api/errors", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        errors := a.bot.getRecentErrors()
+        writeJSON(w, 200, map[string]any{
+            "errors": errors,
+            "count":  len(errors),
+        })
+    }))
+
+    mux.HandleFunc("/api/channel", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        var in struct{ Channel string `json:"channel"` }
+        if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Channel == "" {
+            writeJSON(w, 400, errorResponse{"channel required"})
+            return
+        }
+        
+        a.bot.channelStatesMu.RLock()
+        channelState := a.bot.channelStates[strings.ToLower(in.Channel)]
+        a.bot.channelStatesMu.RUnlock()
+        
+        if channelState == nil {
+            writeJSON(w, 404, errorResponse{"channel not found"})
+            return
+        }
+        
+        // Create a copy to avoid race conditions
+        stateCopy := *channelState
+        stateCopy.Users = make(map[string]string)
+        for k, v := range channelState.Users {
+            stateCopy.Users[k] = v
+        }
+        stateCopy.BanList = make([]BanListEntry, len(channelState.BanList))
+        copy(stateCopy.BanList, channelState.BanList)
+        stateCopy.InviteList = make([]InviteListEntry, len(channelState.InviteList))
+        copy(stateCopy.InviteList, channelState.InviteList)
+        stateCopy.ExceptList = make([]ExceptListEntry, len(channelState.ExceptList))
+        copy(stateCopy.ExceptList, channelState.ExceptList)
+        stateCopy.ModeParams = make([]string, len(channelState.ModeParams))
+        copy(stateCopy.ModeParams, channelState.ModeParams)
+        if channelState.SpecialInfo != nil {
+            stateCopy.SpecialInfo = make(map[string]string)
+            for k, v := range channelState.SpecialInfo {
+                stateCopy.SpecialInfo[k] = v
+            }
+        }
+        
+        writeJSON(w, 200, &stateCopy)
+    }))
+
+    mux.HandleFunc("/api/comprehensive-state", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        // Return comprehensive IRC state information
+        writeJSON(w, 200, map[string]any{
+            "connected":    a.bot.Connected(),
+            "nick":         a.bot.Nick(),
+            "server":       a.bot.getServerInfo(),
+            "channels":     a.bot.getChannelStates(),
+            "users":        a.bot.getAllUsers(),
+            "stats":        a.bot.getStats(),
+            "recent_errors": a.bot.getRecentErrors(),
+            "timestamp":    time.Now().Unix(),
         })
     }))
 
@@ -1459,6 +2557,7 @@ func (a *API) routes() http.Handler {
 
 func main() {
     log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+    log.Printf("Hanna IRC Bot v%s starting up...", Version)
 
     apiToken := os.Getenv("API_TOKEN")
     apiAddr := getenv("API_ADDR", ":"+getenv("API_PORT", "8080"))
