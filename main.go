@@ -597,6 +597,9 @@ func (c *IRCClient) handleLine(line string) {
         if c.onReady != nil {
             c.onReady()
         }
+        // set bot mode +B-)
+        c.rawf("MODE %s +B", c.Nick())
+        log.Printf("Setting bot mode (+B)")
         // Autojoin
         if aj := strings.TrimSpace(os.Getenv("AUTOJOIN")); aj != "" {
             log.Printf("Auto-joining channels: %s", aj)
