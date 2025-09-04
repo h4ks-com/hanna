@@ -335,8 +335,7 @@ func (c *Client) loadTriggerConfig() {
     }
     log.Printf("Got trigger config");
     if err := json.Unmarshal([]byte(configStr), &c.triggerConfig); err != nil {
-        log.Printf("Error parsing TRIGGER_CONFIG: %v", err)
-        c.triggerConfig = TriggerConfig{Endpoints: make(map[string]TriggerEndpoint)}
+        log.Fatalf("FATAL: Invalid TRIGGER_CONFIG JSON: %v", err)
     }
 }
 
