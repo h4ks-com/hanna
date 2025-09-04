@@ -115,6 +115,30 @@ type UserModeChange struct {
     Nick   string // the user affected
 }
 
+// PendingRequest represents a request waiting for IRC response
+type PendingRequest struct {
+    ID        string    `json:"id"`
+    Type      string    `json:"type"` // "list" or "whois"
+    Target    string    `json:"target,omitempty"` // for whois, the nick being queried
+    Data      []map[string]string `json:"data"`
+    Complete  bool      `json:"complete"`
+    StartTime time.Time `json:"start_time"`
+    done      chan bool
+}
+
+// WhoisInfo represents collected WHOIS information
+type WhoisInfo struct {
+    Nick     string `json:"nick"`
+    User     string `json:"user,omitempty"`
+    Host     string `json:"host,omitempty"`
+    RealName string `json:"real_name,omitempty"`
+    Server   string `json:"server,omitempty"`
+    ServerInfo string `json:"server_info,omitempty"`
+    Operator bool   `json:"operator"`
+    Idle     string `json:"idle,omitempty"`
+    Channels string `json:"channels,omitempty"`
+}
+
 type IRCClient struct {
     addr          string
     useTLS        bool
@@ -142,6 +166,10 @@ type IRCClient struct {
     // SASL state tracking
     saslInProgress atomic.Bool
     saslComplete   chan bool
+
+    // Pending requests tracking (for LIST and WHOIS)
+    pendingMu sync.RWMutex
+    pending   map[string]*PendingRequest // request ID -> request
 
     onReady func()
 }
@@ -171,6 +199,7 @@ func NewIRCClient() *IRCClient {
         channels:    make(map[string]struct{}),
         channelStates: make(map[string]*ChannelState),
         saslComplete: make(chan bool, 1),
+        pending:     make(map[string]*PendingRequest),
     }
     c.nick.Store(getenv("IRC_NICK", "Hanna"))
     
@@ -319,6 +348,85 @@ func (c *IRCClient) getChannelStates() map[string]map[string]interface{} {
         result[channelName] = users
     }
     return result
+}
+
+// Helper functions for pending requests
+func (c *IRCClient) createPendingRequest(reqType, target string) *PendingRequest {
+    c.pendingMu.Lock()
+    defer c.pendingMu.Unlock()
+    
+    req := &PendingRequest{
+        ID:        fmt.Sprintf("%s_%d", reqType, time.Now().UnixNano()),
+        Type:      reqType,
+        Target:    target,
+        Data:      make([]map[string]string, 0),
+        Complete:  false,
+        StartTime: time.Now(),
+        done:      make(chan bool, 1),
+    }
+    
+    c.pending[req.ID] = req
+    
+    // Cleanup old requests after 30 seconds
+    go func() {
+        select {
+        case <-req.done:
+            // Request completed normally
+        case <-time.After(30 * time.Second):
+            // Request timed out
+            c.pendingMu.Lock()
+            delete(c.pending, req.ID)
+            c.pendingMu.Unlock()
+            req.Complete = true
+            close(req.done)
+        }
+    }()
+    
+    return req
+}
+
+func (c *IRCClient) getPendingRequest(id string) *PendingRequest {
+    c.pendingMu.RLock()
+    defer c.pendingMu.RUnlock()
+    return c.pending[id]
+}
+
+func (c *IRCClient) completePendingRequest(id string) {
+    c.pendingMu.Lock()
+    defer c.pendingMu.Unlock()
+    
+    if req := c.pending[id]; req != nil {
+        req.Complete = true
+        select {
+        case req.done <- true:
+        default:
+        }
+        delete(c.pending, id)
+    }
+}
+
+func (c *IRCClient) findPendingRequestByType(reqType string) *PendingRequest {
+    c.pendingMu.RLock()
+    defer c.pendingMu.RUnlock()
+    
+    for _, req := range c.pending {
+        if req.Type == reqType && !req.Complete {
+            return req
+        }
+    }
+    return nil
+}
+
+func (c *IRCClient) findPendingWhoisRequest(nick string) *PendingRequest {
+    c.pendingMu.RLock()
+    defer c.pendingMu.RUnlock()
+    
+    for _, req := range c.pending {
+        if req.Type == "whois" && strings.EqualFold(req.Target, nick) && !req.Complete {
+            return req
+        }
+    }
+    return nil
 }
 
 func (c *IRCClient) Dial(ctx context.Context) error {
@@ -800,6 +908,112 @@ func (c *IRCClient) handleLine(line string) {
             channel := args[1]
             log.Printf("End of NAMES list for %s", channel)
         }
+    case "322": // RPL_LIST - Channel list entry
+        // :server 322 nick #channel users :topic
+        if len(args) >= 3 {
+            if req := c.findPendingRequestByType("list"); req != nil {
+                channel := args[1]
+                users := args[2]
+                topic := trailing
+                
+                entry := map[string]string{
+                    "channel": channel,
+                    "users":   users,
+                    "topic":   topic,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("LIST entry: %s (%s users) - %s", channel, users, topic)
+            }
+        }
+    case "323": // RPL_LISTEND - End of channel list
+        // :server 323 nick :End of LIST
+        if req := c.findPendingRequestByType("list"); req != nil {
+            log.Printf("End of LIST - found %d channels", len(req.Data))
+            c.completePendingRequest(req.ID)
+        }
+    case "311": // RPL_WHOISUSER
+        // :server 311 nick target user host * :real_name
+        if len(args) >= 5 && trailing != "" {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                entry := map[string]string{
+                    "type":      "user",
+                    "nick":      targetNick,
+                    "user":      args[2],
+                    "host":      args[3],
+                    "real_name": trailing,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("WHOIS user info for %s: %s@%s (%s)", targetNick, args[2], args[3], trailing)
+            }
+        }
+    case "312": // RPL_WHOISSERVER
+        // :server 312 nick target server :server_info
+        if len(args) >= 3 && trailing != "" {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                entry := map[string]string{
+                    "type":        "server",
+                    "nick":        targetNick,
+                    "server":      args[2],
+                    "server_info": trailing,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("WHOIS server info for %s: %s (%s)", targetNick, args[2], trailing)
+            }
+        }
+    case "313": // RPL_WHOISOPERATOR
+        // :server 313 nick target :privileges
+        if len(args) >= 2 && trailing != "" {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                entry := map[string]string{
+                    "type":       "operator",
+                    "nick":       targetNick,
+                    "privileges": trailing,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("WHOIS operator info for %s: %s", targetNick, trailing)
+            }
+        }
+    case "317": // RPL_WHOISIDLE
+        // :server 317 nick target seconds :seconds idle
+        if len(args) >= 3 && trailing != "" {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                entry := map[string]string{
+                    "type":    "idle",
+                    "nick":    targetNick,
+                    "seconds": args[2],
+                    "info":    trailing,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("WHOIS idle info for %s: %s seconds (%s)", targetNick, args[2], trailing)
+            }
+        }
+    case "318": // RPL_ENDOFWHOIS
+        // :server 318 nick target :info
+        if len(args) >= 2 {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                log.Printf("End of WHOIS for %s - collected %d entries", targetNick, len(req.Data))
+                c.completePendingRequest(req.ID)
+            }
+        }
+    case "319": // RPL_WHOISCHANNELS
+        // :server 319 nick target :*( ( '@' / '+' ) <channel> ' ' )
+        if len(args) >= 2 && trailing != "" {
+            targetNick := args[1]
+            if req := c.findPendingWhoisRequest(targetNick); req != nil {
+                entry := map[string]string{
+                    "type":     "channels",
+                    "nick":     targetNick,
+                    "channels": trailing,
+                }
+                req.Data = append(req.Data, entry)
+                log.Printf("WHOIS channels for %s: %s", targetNick, trailing)
+            }
+        }
     }
 }
 
@@ -936,6 +1150,40 @@ func (c *IRCClient) Privmsg(target, msg string) {
 }
 func (c *IRCClient) Notice(target, msg string) { c.rawf("NOTICE %s :%s", target, msg) }
 func (c *IRCClient) SetNick(n string)           { c.rawf("NICK %s", n) }
+
+// List initiates a LIST command and returns a request ID to track the response
+func (c *IRCClient) List() string {
+    req := c.createPendingRequest("list", "")
+    c.raw("LIST")
+    return req.ID
+}
+
+// Whois initiates a WHOIS command for a specific nick and returns a request ID
+func (c *IRCClient) Whois(nick string) string {
+    req := c.createPendingRequest("whois", nick)
+    c.rawf("WHOIS %s", nick)
+    return req.ID
+}
+
+// GetRequestResult waits for a request to complete and returns the result
+func (c *IRCClient) GetRequestResult(requestID string, timeout time.Duration) (*PendingRequest, error) {
+    req := c.getPendingRequest(requestID)
+    if req == nil {
+        return nil, fmt.Errorf("request not found")
+    }
+    
+    if req.Complete {
+        return req, nil
+    }
+    
+    // Wait for completion or timeout
+    select {
+    case <-req.done:
+        return req, nil
+    case <-time.After(timeout):
+        return req, fmt.Errorf("request timed out")
+    }
+}
 
 func (c *IRCClient) Channels() []string {
     c.channelsMu.RLock()
@@ -1129,6 +1377,77 @@ func (a *API) routes() http.Handler {
         }
         a.bot.SetNick(in.Nick)
         writeJSON(w, 200, map[string]string{"status": "ok"})
+    }))
+
+    mux.HandleFunc("/api/list", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        if !a.bot.Connected() {
+            writeJSON(w, 503, errorResponse{"bot not connected"})
+            return
+        }
+        
+        requestID := a.bot.List()
+        
+        // Wait for the result with a 10 second timeout
+        result, err := a.bot.GetRequestResult(requestID, 10*time.Second)
+        if err != nil {
+            writeJSON(w, 500, errorResponse{fmt.Sprintf("list request failed: %v", err)})
+            return
+        }
+        
+        writeJSON(w, 200, map[string]interface{}{
+            "channels": result.Data,
+            "count":    len(result.Data),
+        })
+    }))
+
+    mux.HandleFunc("/api/whois", a.auth(func(w http.ResponseWriter, r *http.Request) {
+        if !a.bot.Connected() {
+            writeJSON(w, 503, errorResponse{"bot not connected"})
+            return
+        }
+        
+        var in struct{ Nick string `json:"nick"` }
+        if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Nick) == "" {
+            writeJSON(w, 400, errorResponse{"nick required"})
+            return
+        }
+        
+        requestID := a.bot.Whois(in.Nick)
+        
+        // Wait for the result with a 10 second timeout
+        result, err := a.bot.GetRequestResult(requestID, 10*time.Second)
+        if err != nil {
+            writeJSON(w, 500, errorResponse{fmt.Sprintf("whois request failed: %v", err)})
+            return
+        }
+        
+        // Parse the whois data into a structured format
+        whoisInfo := make(map[string]interface{})
+        whoisInfo["nick"] = in.Nick
+        whoisInfo["raw_data"] = result.Data
+        
+        // Parse structured data
+        for _, entry := range result.Data {
+            switch entry["type"] {
+            case "user":
+                whoisInfo["user"] = entry["user"]
+                whoisInfo["host"] = entry["host"]
+                whoisInfo["real_name"] = entry["real_name"]
+            case "server":
+                whoisInfo["server"] = entry["server"]
+                whoisInfo["server_info"] = entry["server_info"]
+            case "operator":
+                whoisInfo["operator"] = true
+                whoisInfo["privileges"] = entry["privileges"]
+            case "idle":
+                whoisInfo["idle_seconds"] = entry["seconds"]
+                whoisInfo["idle_info"] = entry["info"]
+            case "channels":
+                whoisInfo["channels"] = entry["channels"]
+            }
+        }
+        
+        writeJSON(w, 200, whoisInfo)
     }))
 
     a.mux = mux

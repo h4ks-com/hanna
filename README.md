@@ -10,6 +10,7 @@ A robust, self-contained Go IRC bot that connects over TLS and exposes a secure,
 - **SASL Authentication**: Optional SASL PLAIN authentication for IRC networks that require it
 - **Auto-Reconnect**: Intelligent reconnection with exponential backoff for maximum uptime
 - **REST API**: Token-protected HTTP/HTTPS endpoints for complete bot control
+- **IRC Network Discovery**: List channels and get user information via LIST and WHOIS commands
 - **Flexible Event System**: Advanced trigger system supporting multiple IRC events (mentions, joins, parts, mode changes, etc.)
 - **n8n Integration**: Comprehensive n8n node package with both action and trigger nodes
 - **Multiple Webhooks**: Support for multiple trigger endpoints with filtering and authentication
@@ -258,6 +259,67 @@ Content-Type: application/json
 
 {
   "line": "PRIVMSG #channel :Custom message"
+}
+```
+
+#### List IRC Channels
+```http
+GET /api/list
+Authorization: Bearer <token>
+```
+
+Response:
+```json
+{
+  "channels": [
+    {
+      "channel": "#general",
+      "users": "42",
+      "topic": "Welcome to the general discussion channel"
+    },
+    {
+      "channel": "#bots",
+      "users": "15", 
+      "topic": "Bot testing and development"
+    }
+  ],
+  "count": 2
+}
+```
+
+#### Get User Information (WHOIS)
+```http
+POST /api/whois
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "nick": "username"
+}
+```
+
+Response:
+```json
+{
+  "nick": "username",
+  "user": "user",
+  "host": "example.com",
+  "real_name": "Real Name",
+  "server": "irc.libera.chat",
+  "server_info": "Stockholm, Sweden",
+  "operator": false,
+  "idle_seconds": "42",
+  "idle_info": "seconds idle",
+  "channels": "@#ops +#general #random",
+  "raw_data": [
+    {
+      "type": "user",
+      "nick": "username",
+      "user": "user",
+      "host": "example.com",
+      "real_name": "Real Name"
+    }
+  ]
 }
 ```
 
