@@ -1,4 +1,4 @@
-package main
+package irc
 
 import (
 	"log"
@@ -14,7 +14,7 @@ func TestNickMatching(t *testing.T) {
 	for _, botNick := range testNicks {
 		t.Run("nick_"+botNick, func(t *testing.T) {
 			// Create a test IRC client
-			client := &IRCClient{
+			client := &Client{
 				channels: make(map[string]struct{}),
 			}
 			client.nick.Store(botNick)

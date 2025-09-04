@@ -1,4 +1,4 @@
-package main
+package irc
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 
 // Test IRC message handling for LIST and WHOIS responses
 func TestListMessageHandling(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Create a pending LIST request
 	req := client.createPendingRequest("list", "")
@@ -46,7 +46,7 @@ func TestListMessageHandling(t *testing.T) {
 }
 
 func TestWhoisMessageHandling(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Create a pending WHOIS request
 	req := client.createPendingRequest("whois", "testuser")
@@ -135,7 +135,7 @@ func TestWhoisMessageHandling(t *testing.T) {
 }
 
 func TestWhoisWithoutOptionalFields(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Create a pending WHOIS request
 	req := client.createPendingRequest("whois", "regularuser")
@@ -158,7 +158,7 @@ func TestWhoisWithoutOptionalFields(t *testing.T) {
 }
 
 func TestCaseInsensitiveWhoisMatching(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Create a pending WHOIS request with lowercase nick
 	req := client.createPendingRequest("whois", "testuser")
@@ -178,7 +178,7 @@ func TestCaseInsensitiveWhoisMatching(t *testing.T) {
 }
 
 func TestListWithoutPendingRequest(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Try to handle LIST responses without a pending request
 	// This should not cause any errors or panics
@@ -190,7 +190,7 @@ func TestListWithoutPendingRequest(t *testing.T) {
 }
 
 func TestWhoisWithoutPendingRequest(t *testing.T) {
-	client := NewIRCClient()
+	client := NewClient()
 	
 	// Try to handle WHOIS responses without a pending request
 	// This should not cause any errors or panics
