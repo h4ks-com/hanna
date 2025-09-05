@@ -361,7 +361,7 @@ func NewClient() *Client {
         saslComplete: make(chan bool, 1),
         pending:     make(map[string]*PendingRequest),
         maxLinesBeforePasting: intenv("MAX_LINES_BEFORE_PASTING", 3),
-        pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", "curl -s -F \"file=@{{filename}}\" https://ix.io"),
+        pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", ""),
     }
     c.nick.Store(sanitizeNick(getenv("IRC_NICK", "Hanna")))
     
@@ -2171,12 +2171,12 @@ func (c *Client) createPaste(content string) (string, error) {
     }
     
     curlCmd := strings.ReplaceAll(c.pasteCurlTemplate, "{{filename}}", tempFile.Name())
-    cmdParts := strings.Fields(curlCmd)
-    if len(cmdParts) == 0 {
+    if strings.TrimSpace(curlCmd) == "" {
         return "", fmt.Errorf("invalid curl template")
     }
     
-    cmd := exec.Command(cmdParts[0], cmdParts[1:]...)
+    // Use shell execution to properly handle quoted arguments
+    cmd := exec.Command("sh", "-c", curlCmd)
     output, err := cmd.Output()
     if err != nil {
         return "", fmt.Errorf("curl command failed: %w", err)
@@ -2227,6 +2227,24 @@ func (c *Client) Privmsg(target, msg string) {
     
     // Check if flood protection should be applied
     if c.isFloodProtectedChannel(target) && len(lines) > c.maxLinesBeforePasting {
+        // Check if paste service is configured
+        if strings.TrimSpace(c.pasteCurlTemplate) == "" {
+            // No paste service configured, just truncate
+            for i := 0; i < c.maxLinesBeforePasting && i < len(lines); i++ {
+                line := lines[i]
+                for len(line) > 0 {
+                    chunk := line
+                    if len(chunk) > maxMsgLen {
+                        chunk = chunk[:maxMsgLen]
+                    }
+                    c.rawf("PRIVMSG %s :%s", target, chunk)
+                    line = line[len(chunk):]
+                }
+            }
+            c.rawf("PRIVMSG %s :... (truncated %d lines - configure PASTE_CURL_TEMPLATE to enable pasting)", target, len(lines)-c.maxLinesBeforePasting)
+            return
+        }
+        
         // Create paste and send URL instead
         url, err := c.createPaste(msg)
         if err != nil {

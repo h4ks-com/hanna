@@ -115,7 +115,7 @@ func TestFloodProtectionDefaults(t *testing.T) {
 		t.Errorf("Expected default maxLinesBeforePasting to be 3, got %d", client.maxLinesBeforePasting)
 	}
 	
-	expectedTemplate := "curl -s -F \"file=@{{filename}}\" https://ix.io"
+	expectedTemplate := ""
 	if client.pasteCurlTemplate != expectedTemplate {
 		t.Errorf("Expected default pasteCurlTemplate to be %s, got %s", expectedTemplate, client.pasteCurlTemplate)
 	}
@@ -328,5 +328,58 @@ func TestPrivmsgNoFloodProtectionBelowThreshold(t *testing.T) {
 	expectedMessages := 3
 	if len(sentMessages) != expectedMessages {
 		t.Errorf("Expected %d messages, got %d", expectedMessages, len(sentMessages))
+	}
+}
+
+func TestFloodProtectionWithEmptyPasteTemplate(t *testing.T) {
+	// Save original env
+	oldChannels := os.Getenv("FLOOD_PROTECTED_CHANNELS")
+	oldMaxLines := os.Getenv("MAX_LINES_BEFORE_PASTING")
+	oldTemplate := os.Getenv("PASTE_CURL_TEMPLATE")
+	
+	defer func() {
+		os.Setenv("FLOOD_PROTECTED_CHANNELS", oldChannels)
+		os.Setenv("MAX_LINES_BEFORE_PASTING", oldMaxLines)
+		os.Setenv("PASTE_CURL_TEMPLATE", oldTemplate)
+	}()
+	
+	// Set test env vars with empty paste template (default behavior)
+	os.Setenv("FLOOD_PROTECTED_CHANNELS", "#test")
+	os.Setenv("MAX_LINES_BEFORE_PASTING", "2")
+	os.Setenv("PASTE_CURL_TEMPLATE", "")
+	
+	client := NewClient()
+	
+	// Mock the raw function to capture output
+	var sentMessages []string
+	client.testRawCapture = func(s string) {
+		sentMessages = append(sentMessages, s)
+	}
+	
+	// Send a message with more lines than the threshold
+	multilineMsg := "line1\nline2\nline3\nline4\nline5"
+	client.Privmsg("#test", multilineMsg)
+	
+	// Should send only 2 lines plus truncation message with configure hint
+	expectedMessages := 3 // line1, line2, truncation message
+	if len(sentMessages) != expectedMessages {
+		t.Errorf("Expected %d messages, got %d", expectedMessages, len(sentMessages))
+		for i, msg := range sentMessages {
+			t.Logf("Message %d: %s", i, msg)
+		}
+		return
+	}
+	
+	// Check that the truncation message includes the configuration hint
+	truncationMsg := sentMessages[2]
+	expectedHint := "configure PASTE_CURL_TEMPLATE to enable pasting"
+	if !strings.Contains(truncationMsg, expectedHint) {
+		t.Errorf("Expected truncation message to contain '%s', got: %s", expectedHint, truncationMsg)
+	}
+	
+	// Check that it mentions the correct number of truncated lines
+	expectedTruncated := "truncated 3 lines"
+	if !strings.Contains(truncationMsg, expectedTruncated) {
+		t.Errorf("Expected truncation message to contain '%s', got: %s", expectedTruncated, truncationMsg)
 	}
 }
