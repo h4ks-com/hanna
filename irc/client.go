@@ -10,10 +10,12 @@ import (
     "encoding/json"
     "errors"
     "fmt"
+    "html/template"
     "log"
     "net"
     "net/http"
     "os"
+    "os/exec"
     "regexp"
     "strconv"
     "strings"
@@ -65,6 +67,17 @@ func boolenv(key string, def bool) bool {
     }
     if v == "0" || v == "false" || v == "no" {
         return false
+    }
+    return def
+}
+
+func intenv(key string, def int) int {
+    v := strings.TrimSpace(os.Getenv(key))
+    if v == "" {
+        return def
+    }
+    if i, err := strconv.Atoi(v); err == nil {
+        return i
     }
     return def
 }
@@ -275,6 +288,14 @@ type Client struct {
     pendingMu sync.RWMutex
     pending   map[string]*PendingRequest // request ID -> request
 
+    // Flood protection
+    floodProtectedChannels []string
+    maxLinesBeforePasting  int
+    pasteCurlTemplate      string
+
+    // Test hooks
+    testRawCapture func(string)
+
     onReady func()
 }
 
@@ -308,8 +329,19 @@ func NewClient() *Client {
         errors:       make([]IRCError, 0),
         saslComplete: make(chan bool, 1),
         pending:     make(map[string]*PendingRequest),
+        maxLinesBeforePasting: intenv("MAX_LINES_BEFORE_PASTING", 3),
+        pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", "curl -s -F \"file=@{{filename}}\" https://s.h4ks.com"),
     }
     c.nick.Store(getenv("IRC_NICK", "Hanna"))
+    
+    // Load flood protected channels
+    floodChannels := strings.TrimSpace(os.Getenv("FLOOD_PROTECTED_CHANNELS"))
+    if floodChannels != "" {
+        c.floodProtectedChannels = strings.Split(floodChannels, ",")
+        for i := range c.floodProtectedChannels {
+            c.floodProtectedChannels[i] = strings.TrimSpace(c.floodProtectedChannels[i])
+        }
+    }
     
     // Load trigger configuration
     c.loadTriggerConfig()
@@ -2080,9 +2112,70 @@ func (c *Client) callTriggerEndpoint(name string, endpoint TriggerEndpoint, payl
     }
 }
 
+func (c *Client) createPaste(content string) (string, error) {
+    templatePath := "templates/paste.html"
+    // Try current directory first, then parent directory for tests
+    tmpl, err := template.ParseFiles(templatePath)
+    if err != nil {
+        templatePath = "../templates/paste.html"
+        tmpl, err = template.ParseFiles(templatePath)
+        if err != nil {
+            return "", fmt.Errorf("failed to parse template: %w", err)
+        }
+    }
+    
+    tempFile, err := os.CreateTemp("", "paste_*.html")
+    if err != nil {
+        return "", fmt.Errorf("failed to create temp file: %w", err)
+    }
+    defer os.Remove(tempFile.Name())
+    defer tempFile.Close()
+    
+    data := struct{ Content string }{Content: content}
+    if err := tmpl.Execute(tempFile, data); err != nil {
+        return "", fmt.Errorf("failed to execute template: %w", err)
+    }
+    
+    if err := tempFile.Close(); err != nil {
+        return "", fmt.Errorf("failed to close temp file: %w", err)
+    }
+    
+    curlCmd := strings.ReplaceAll(c.pasteCurlTemplate, "{{filename}}", tempFile.Name())
+    cmdParts := strings.Fields(curlCmd)
+    if len(cmdParts) == 0 {
+        return "", fmt.Errorf("invalid curl template")
+    }
+    
+    cmd := exec.Command(cmdParts[0], cmdParts[1:]...)
+    output, err := cmd.Output()
+    if err != nil {
+        return "", fmt.Errorf("curl command failed: %w", err)
+    }
+    
+    url := strings.TrimSpace(string(output))
+    if url == "" {
+        return "", fmt.Errorf("empty response from paste service")
+    }
+    
+    return url, nil
+}
+
+func (c *Client) isFloodProtectedChannel(channel string) bool {
+    for _, ch := range c.floodProtectedChannels {
+        if strings.EqualFold(ch, channel) {
+            return true
+        }
+    }
+    return false
+}
+
 func (c *Client) rawf(format string, a ...any) { c.raw(fmt.Sprintf(format, a...)) }
 
 func (c *Client) raw(s string) {
+    if c.testRawCapture != nil {
+        c.testRawCapture(s)
+        return
+    }
     c.wmu.Lock()
     log.Printf(">> %s", s)
     fmt.Fprint(c.rw, s, "\r\n")
@@ -2099,13 +2192,49 @@ func (c *Client) Part(channel string, reason string) {
     }
 }
 func (c *Client) Privmsg(target, msg string) {
-    // IRC protocol: max message length is 512 bytes including command, prefix, etc.
-    // Safe to use 450 chars for message body
     const maxMsgLen = 450
-    // Split on newlines first
     lines := strings.Split(msg, "\n")
+    
+    // Check if flood protection should be applied
+    if c.isFloodProtectedChannel(target) && len(lines) > c.maxLinesBeforePasting {
+        // Create paste and send URL instead
+        url, err := c.createPaste(msg)
+        if err != nil {
+            log.Printf("Failed to create paste for flood protection: %v", err)
+            // Fall back to sending first few lines + truncation message
+            for i := 0; i < c.maxLinesBeforePasting && i < len(lines); i++ {
+                line := lines[i]
+                for len(line) > 0 {
+                    chunk := line
+                    if len(chunk) > maxMsgLen {
+                        chunk = chunk[:maxMsgLen]
+                    }
+                    c.rawf("PRIVMSG %s :%s", target, chunk)
+                    line = line[len(chunk):]
+                }
+            }
+            c.rawf("PRIVMSG %s :... (truncated %d lines - paste creation failed)", target, len(lines)-c.maxLinesBeforePasting)
+            return
+        }
+        
+        // Send first few lines plus paste URL
+        for i := 0; i < c.maxLinesBeforePasting && i < len(lines); i++ {
+            line := lines[i]
+            for len(line) > 0 {
+                chunk := line
+                if len(chunk) > maxMsgLen {
+                    chunk = chunk[:maxMsgLen]
+                }
+                c.rawf("PRIVMSG %s :%s", target, chunk)
+                line = line[len(chunk):]
+            }
+        }
+        c.rawf("PRIVMSG %s :... full output: %s", target, url)
+        return
+    }
+    
+    // Normal message sending (no flood protection)
     for _, line := range lines {
-        // Split long lines into chunks
         for len(line) > 0 {
             chunk := line
             if len(chunk) > maxMsgLen {
