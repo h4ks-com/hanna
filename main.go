@@ -17,12 +17,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -52,9 +50,8 @@ func main() {
 	// Run IRC supervisor
 	go sup.Run()
 
-	// Start HTTP API
-	api := &API{bot: bot, token: apiToken}
-	srv := &http.Server{Addr: apiAddr, Handler: api.routes()}
+	// Start HTTP API using the comprehensive API from the IRC client
+	srv := &http.Server{Addr: apiAddr, Handler: bot.CreateAPI(apiToken)}
 
 	go func() {
 		if apiTLS {
@@ -154,103 +151,4 @@ func (s *Supervisor) Stop() {
 	log.Printf("Stopping supervisor")
 	close(s.stop)
 	_ = s.client.Close()
-}
-
-// --- HTTP API ---
-
-type API struct {
-	bot   *irc.Client
-	token string
-	mux   *http.ServeMux
-}
-
-type errorResponse struct{ Error string `json:"error"` }
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (a *API) auth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if a.token == "" {
-			writeJSON(w, http.StatusForbidden, errorResponse{"API_TOKEN not set on server"})
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		const pfx = "Bearer "
-		if !strings.HasPrefix(auth, pfx) || strings.TrimPrefix(auth, pfx) != a.token {
-			writeJSON(w, http.StatusUnauthorized, errorResponse{"invalid or missing bearer token"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	}
-}
-
-func (a *API) routes() http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		if a.bot.Connected() {
-			writeJSON(w, 200, map[string]any{"ok": true, "nick": a.bot.Nick()})
-		} else {
-			writeJSON(w, 503, map[string]any{"ok": false})
-		}
-	})
-
-	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"version": Version, "name": "Hanna IRC Bot"})
-	})
-
-	mux.HandleFunc("/api/state", a.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{
-			"connected": a.bot.Connected(),
-			"nick":      a.bot.Nick(),
-			"channels":  a.bot.GetChannelStates(),
-		})
-	}))
-
-	mux.HandleFunc("/api/join", a.auth(func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Channel string `json:"channel"` }
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Channel == "" {
-			writeJSON(w, 400, errorResponse{"channel required"})
-			return
-		}
-		a.bot.Join(in.Channel)
-		writeJSON(w, 200, map[string]string{"status": "ok"})
-	}))
-
-	mux.HandleFunc("/api/part", a.auth(func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Channel, Reason string }
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Channel == "" {
-			writeJSON(w, 400, errorResponse{"channel required"})
-			return
-		}
-		a.bot.Part(in.Channel, in.Reason)
-		writeJSON(w, 200, map[string]string{"status": "ok"})
-	}))
-
-	mux.HandleFunc("/api/send", a.auth(func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Target, Message string }
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Target == "" || in.Message == "" {
-			writeJSON(w, 400, errorResponse{"target and message required"})
-			return
-		}
-		a.bot.Privmsg(in.Target, in.Message)
-		writeJSON(w, 200, map[string]string{"status": "ok"})
-	}))
-
-	mux.HandleFunc("/api/nick", a.auth(func(w http.ResponseWriter, r *http.Request) {
-		var in struct{ Nick string }
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Nick) == "" {
-			writeJSON(w, 400, errorResponse{"nick required"})
-			return
-		}
-		a.bot.SetNick(in.Nick)
-		writeJSON(w, 200, map[string]string{"status": "ok"})
-	}))
-
-	a.mux = mux
-	return mux
 }

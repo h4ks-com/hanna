@@ -2399,6 +2399,12 @@ func (s *Supervisor) Stop() {
     _ = s.client.Close() 
 }
 
+// CreateAPI creates a new API instance with the comprehensive endpoints
+func (c *Client) CreateAPI(token string) http.Handler {
+    api := &API{bot: c, token: token}
+    return api.routes()
+}
+
 // --- HTTP API ---
 
 type API struct {
@@ -2608,7 +2614,7 @@ func (a *API) routes() http.Handler {
     }))
 
     mux.HandleFunc("/api/raw", a.auth(func(w http.ResponseWriter, r *http.Request) {
-        var in struct{ Line string }
+        var in struct{ Line string `json:"line"` }
         if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Line) == "" {
             writeJSON(w, 400, errorResponse{"line required"})
             return
