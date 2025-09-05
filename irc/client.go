@@ -82,6 +82,37 @@ func intenv(key string, def int) int {
     return def
 }
 
+func sanitizeNick(nick string) string {
+    if nick == "" {
+        return "Hanna"
+    }
+    
+    // Valid IRC nick characters: a-z, A-Z, 0-9, {, }, [, ], _, -, `
+    var sanitized strings.Builder
+    for _, r := range nick {
+        if (r >= 'a' && r <= 'z') ||
+           (r >= 'A' && r <= 'Z') ||
+           (r >= '0' && r <= '9') ||
+           r == '{' || r == '}' ||
+           r == '[' || r == ']' ||
+           r == '_' || r == '-' || r == '`' {
+            sanitized.WriteRune(r)
+        }
+    }
+    
+    result := sanitized.String()
+    if result == "" {
+        return "Hanna"
+    }
+    
+    // Truncate to maximum 63 characters as per IRC spec
+    if len(result) > 63 {
+        result = result[:63]
+    }
+    
+    return result
+}
+
 // --- IRC Client ---
 
 type TriggerPayload struct {
@@ -332,7 +363,7 @@ func NewClient() *Client {
         maxLinesBeforePasting: intenv("MAX_LINES_BEFORE_PASTING", 3),
         pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", "curl -s -F \"file=@{{filename}}\" https://s.h4ks.com"),
     }
-    c.nick.Store(getenv("IRC_NICK", "Hanna"))
+    c.nick.Store(sanitizeNick(getenv("IRC_NICK", "Hanna")))
     
     // Load flood protected channels
     floodChannels := strings.TrimSpace(os.Getenv("FLOOD_PROTECTED_CHANNELS"))
@@ -2246,7 +2277,10 @@ func (c *Client) Privmsg(target, msg string) {
     }
 }
 func (c *Client) Notice(target, msg string) { c.rawf("NOTICE %s :%s", target, msg) }
-func (c *Client) SetNick(n string)           { c.rawf("NICK %s", n) }
+func (c *Client) SetNick(n string)           { 
+    sanitized := sanitizeNick(n)
+    c.rawf("NICK %s", sanitized)
+}
 
 // List initiates a LIST command and returns a request ID to track the response
 func (c *Client) List() string {
