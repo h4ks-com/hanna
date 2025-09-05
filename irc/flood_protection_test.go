@@ -115,7 +115,7 @@ func TestFloodProtectionDefaults(t *testing.T) {
 		t.Errorf("Expected default maxLinesBeforePasting to be 3, got %d", client.maxLinesBeforePasting)
 	}
 	
-	expectedTemplate := "curl -s -F \"file=@{{filename}}\" https://s.h4ks.com"
+	expectedTemplate := "curl -s -F \"file=@{{filename}}\" https://ix.io"
 	if client.pasteCurlTemplate != expectedTemplate {
 		t.Errorf("Expected default pasteCurlTemplate to be %s, got %s", expectedTemplate, client.pasteCurlTemplate)
 	}

@@ -361,7 +361,7 @@ func NewClient() *Client {
         saslComplete: make(chan bool, 1),
         pending:     make(map[string]*PendingRequest),
         maxLinesBeforePasting: intenv("MAX_LINES_BEFORE_PASTING", 3),
-        pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", "curl -s -F \"file=@{{filename}}\" https://s.h4ks.com"),
+        pasteCurlTemplate:     getenv("PASTE_CURL_TEMPLATE", "curl -s -F \"file=@{{filename}}\" https://ix.io"),
     }
     c.nick.Store(sanitizeNick(getenv("IRC_NICK", "Hanna")))
     
