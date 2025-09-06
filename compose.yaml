@@ -57,8 +57,6 @@ services:
   hanna-bot:
     build: .
     restart: always
-    ports:
-      - '${API_PORT:-8080}:${API_PORT:-8080}'
     env_file:
       - .env
     environment:
