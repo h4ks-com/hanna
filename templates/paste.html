@@ -1,183 +1,130 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IRC Paste</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.4.0/github-markdown-dark.min.css" rel="stylesheet" />
+
+    <!-- GitHub dark markdown CSS -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.4.0/github-markdown-dark.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- highlight.js theme (choose any you like: github-dark, atom-one-dark, monokai, etc.) -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+    />
+
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #e6edf3;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #0d1117;
-            min-height: 100vh;
-        }
-        .container {
-            background: #161b22;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            padding: 30px;
-            margin: 20px 0;
-            border: 1px solid #30363d;
-        }
-        .header {
-            border-bottom: 2px solid #21262d;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            color: #f0f6fc;
-            margin: 0;
-            font-size: 2rem;
-            font-weight: 600;
-        }
-        .content {
-            background: #0d1117;
-            border-radius: 8px;
-            padding: 0;
-            border: 1px solid #21262d;
-        }
-        .markdown-body {
-            box-sizing: border-box;
-            min-width: 200px;
-            max-width: none;
-            margin: 0;
-            padding: 24px !important;
-            background-color: #0d1117 !important;
-            color: #e6edf3 !important;
-        }
-        
-        /* Fix code block styling */
-        .markdown-body pre,
-        .markdown-body pre[class*="language-"] {
-            background: #161b22 !important;
-            border: 1px solid #30363d !important;
-            border-radius: 8px !important;
-            padding: 16px !important;
-            overflow: auto !important;
-            font-size: 14px !important;
-            line-height: 1.45 !important;
-            margin: 16px 0 !important;
-            color: #e6edf3 !important;
-        }
-        
-        /* Inline code styling */
-        .markdown-body code {
-            background: #6e768166 !important;
-            padding: 0.2em 0.4em !important;
-            border-radius: 6px !important;
-            font-size: 85% !important;
-            color: #e6edf3 !important;
-            border: none !important;
-        }
-        
-        /* Code within pre blocks */
-        .markdown-body pre code {
-            background: transparent !important;
-            padding: 0 !important;
-            border-radius: 0 !important;
-            font-size: 14px !important;
-        }
-        
-        /* Fix other markdown elements for dark theme */
-        .markdown-body h1, 
-        .markdown-body h2, 
-        .markdown-body h3, 
-        .markdown-body h4, 
-        .markdown-body h5, 
-        .markdown-body h6 {
-            color: #f0f6fc !important;
-            border-bottom-color: #21262d !important;
-        }
-        
-        .markdown-body blockquote {
-            border-left-color: #30363d !important;
-            color: #8b949e !important;
-        }
-        
-        .markdown-body table tr {
-            background-color: #0d1117 !important;
-            border-top-color: #21262d !important;
-        }
-        
-        .markdown-body table th,
-        .markdown-body table td {
-            border-color: #30363d !important;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #21262d;
-            color: #8b949e;
-            font-size: 0.8rem;
-        }
-        
-        @media (max-width: 768px) {
-            body {
-                padding: 10px;
-            }
-            .container {
-                padding: 20px;
-            }
-            .header h1 {
-                font-size: 1.5rem;
-            }
-            .markdown-body {
-                padding: 16px !important;
-            }
-        }
-        
-        @media (prefers-color-scheme: dark) {
-            /* Ensure dark theme even if browser prefers light */
-            body {
-                background-color: #0d1117;
-                color: #e6edf3;
-            }
-        }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica,
+          Arial, sans-serif;
+        line-height: 1.6;
+        color: #e6edf3;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #0d1117;
+        min-height: 100vh;
+      }
+      .container {
+        background: #161b22;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        padding: 30px;
+        margin: 20px 0;
+        border: 1px solid #30363d;
+      }
+      .header {
+        border-bottom: 2px solid #21262d;
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+      }
+      .header h1 {
+        color: #f0f6fc;
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 600;
+      }
+      .content {
+        background: #0d1117;
+        border-radius: 8px;
+        padding: 0;
+        border: 1px solid #21262d;
+      }
+      .markdown-body {
+        box-sizing: border-box;
+        min-width: 200px;
+        max-width: none;
+        margin: 0;
+        padding: 24px !important;
+        background-color: #0d1117 !important;
+        color: #e6edf3 !important;
+      }
+      pre code {
+        font-size: 14px;
+        border-radius: 6px;
+      }
+      .footer {
+        text-align: center;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #21262d;
+        color: #8b949e;
+        font-size: 0.8rem;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <div class="header">
-            <h1>IRC Paste</h1>
-        </div>
-        <div class="content">
-            <div class="markdown-body" id="markdown-content">
-                <!-- Markdown content will be rendered here -->
-            </div>
-        </div>
-        <div class="footer">
-            <p>Generated by Hanna IRC Bot</p>
-        </div>
+      <div class="header">
+        <h1>IRC Paste</h1>
+      </div>
+      <div class="content">
+        <div class="markdown-body" id="markdown-content"></div>
+      </div>
+      <div class="footer">
+        <p>Generated by Hanna IRC Bot</p>
+      </div>
     </div>
 
+    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.5/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Load many popular languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+
     <script>
-        // Get the raw content from the template
-        const rawContent = `{{.Content}}`;
-        
-        // Configure marked for better rendering
-        marked.setOptions({
-            breaks: true,
-            gfm: true,
-            highlight: function(code, language) {
-                // Basic syntax highlighting for code blocks
-                return code;
-            }
-        });
-        
-        // Parse markdown and sanitize HTML
-        const htmlContent = marked.parse(rawContent);
-        const cleanHtml = DOMPurify.sanitize(htmlContent);
-        
-        // Insert the rendered markdown
-        document.getElementById('markdown-content').innerHTML = cleanHtml;
+      const rawContent = `{{.Content}}`;
+
+      // Configure marked to render markdown
+      marked.setOptions({
+        breaks: true,
+        gfm: true,
+      })
+
+      // Convert markdown to HTML
+      const htmlContent = marked.parse(rawContent)
+      const cleanHtml = DOMPurify.sanitize(htmlContent)
+
+      // Insert into DOM
+      document.getElementById('markdown-content').innerHTML = cleanHtml
+
+      // Highlight all code blocks
+      hljs.highlightAll()
     </script>
-</body>
+  </body>
 </html>
