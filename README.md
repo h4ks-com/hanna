@@ -666,9 +666,27 @@ The included `compose.yaml` provides:
 
 - **Hanna IRC Bot**: Main bot service with API
 - **n8n**: Workflow automation platform for chat processing
+- **n8n Workflow Loader**: Sidecar container that automatically loads workflows on startup
 - **Automatic networking**: Bot can communicate with n8n via `http://n8n:5678`
 - **Persistent storage**: n8n workflows and data are preserved
 - **Environment-based config**: All settings from `.env` file
+
+### Automatic Workflow Loading
+
+The Docker Compose setup includes a workflow loader that automatically imports workflows into n8n:
+
+1. **Default Echo Bot**: A pre-configured workflow that echoes IRC messages
+2. **Auto-Import**: Workflows in `n8n-workflow-loader/workflows/` are loaded on startup
+3. **Skip Existing**: Already-imported workflows are detected and skipped
+4. **Auto-Activation**: Imported workflows are automatically activated
+5. **Trigger Integration**: The bot's `TRIGGER_CONFIG` is automatically configured
+
+**Adding Custom Workflows:**
+1. Place workflow JSON files in `n8n-workflow-loader/workflows/`
+2. Remove the `id` field from the workflow JSON
+3. Restart with `docker-compose up -d`
+
+The workflow loader uses the n8n REST API and includes error handling and duplicate detection.
 
 ### Manual Docker Build
 
