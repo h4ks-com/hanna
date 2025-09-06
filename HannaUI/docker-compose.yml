@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  hannaui:
+    build: .
+    container_name: hannaui
+    ports:
+      - "8081:80"
+    environment:
+      # n8n endpoint configuration
+      HANNA_N8N_ENDPOINT: ${HANNA_N8N_ENDPOINT:-}
+      HANNA_VERSION: "1.0.0"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Optional: Include n8n in the same stack
+  # Uncomment this section if you want to run n8n alongside HannaUI
+  # n8n:
+  #   image: n8nio/n8n:latest
+  #   container_name: hanna-n8n
+  #   ports:
+  #     - "5678:5678"
+  #   environment:
+  #     - N8N_BASIC_AUTH_ACTIVE=true
+  #     - N8N_BASIC_AUTH_USER=admin
+  #     - N8N_BASIC_AUTH_PASSWORD=admin123
+  #     - N8N_HOST=0.0.0.0
+  #     - N8N_PORT=5678
+  #     - N8N_PROTOCOL=http
+  #     - WEBHOOK_URL=http://localhost:5678/
+  #   volumes:
+  #     - n8n_data:/home/node/.n8n
+  #   restart: unless-stopped
+
+# volumes:
+#   n8n_data:

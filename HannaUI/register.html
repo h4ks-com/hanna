@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HannaUI - Register</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="auth.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="auth-page">
+    <!-- Animated orbs container -->
+    <div class="orbs-container">
+        <div class="orb" id="orb-1"></div>
+        <div class="orb" id="orb-2"></div>
+        <div class="orb" id="orb-3"></div>
+        <div class="orb" id="orb-4"></div>
+        <div class="orb" id="orb-5"></div>
+        <div class="orb" id="orb-6"></div>
+        <div class="orb" id="orb-7"></div>
+        <div class="orb" id="orb-8"></div>
+        <div class="orb" id="orb-9"></div>
+        <div class="orb" id="orb-10"></div>
+    </div>
+
+    <!-- Theme selector -->
+    <div class="theme-selector">
+        <button class="theme-btn" data-theme="dark">🌙</button>
+        <button class="theme-btn" data-theme="blue">💙</button>
+        <button class="theme-btn" data-theme="purple">💜</button>
+        <button class="theme-btn" data-theme="pink">🌸</button>
+        <button class="theme-btn" data-theme="cute">🦄</button>
+    </div>
+
+    <!-- Registration Form -->
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1 class="auth-title">Join HannaUI</h1>
+                <p class="auth-subtitle">Create your account to start chatting</p>
+            </div>
+
+            <form class="auth-form" id="registerForm">
+                <div class="form-group">
+                    <label for="newUsername" class="form-label">Username</label>
+                    <input type="text" id="newUsername" name="username" class="form-input" placeholder="Choose a username" required>
+                    <div class="field-hint">Username must be at least 3 characters long</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" id="email" name="email" class="form-input" placeholder="Enter your email" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="newPassword" class="form-label">Password</label>
+                    <input type="password" id="newPassword" name="password" class="form-input" placeholder="Create a password" required>
+                    <button type="button" class="password-toggle" id="passwordToggle1">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                    <div class="field-hint">Password must be at least 6 characters long</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword" class="form-label">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" class="form-input" placeholder="Confirm your password" required>
+                    <button type="button" class="password-toggle" id="passwordToggle2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="acceptTerms" name="acceptTerms" required>
+                        <span class="checkmark"></span>
+                        I agree to the Terms of Service and Privacy Policy
+                    </label>
+                </div>
+
+                <button type="submit" class="auth-btn primary" id="registerBtn">
+                    <span class="btn-text">Create Account</span>
+                    <div class="btn-loader" style="display: none;">
+                        <div class="loader-dot"></div>
+                        <div class="loader-dot"></div>
+                        <div class="loader-dot"></div>
+                    </div>
+                </button>
+
+                <div class="auth-divider">
+                    <span>or</span>
+                </div>
+
+                <a href="login.html" class="auth-btn secondary">
+                    Sign In to Existing Account
+                </a>
+            </form>
+
+            <div class="error-message" id="errorMessage" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span class="error-text"></span>
+            </div>
+
+            <div class="success-message" id="successMessage" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20,6 9,17 4,12"></polyline>
+                </svg>
+                <span class="success-text"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="env.js"></script>
+    <script src="orbs.js"></script>
+    <script src="themes.js"></script>
+    <script src="auth.js"></script>
+</body>
+</html>
