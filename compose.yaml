@@ -46,12 +46,12 @@ services:
       - N8N_LOG_LEVEL=debug
     volumes:
       - ./n8n_data:/home/node/.n8n
-      - ./scripts/n8n-auto-import.sh:/import-script.sh:ro
+      - ./scripts/n8n-auto-import.sh:/scripts/n8n-auto-import.sh:ro
     depends_on:
       n8n:
         condition: service_healthy
     entrypoint: ["/bin/sh"]
-    command: ["/import-script.sh"]
+    command: ["/scripts/n8n-auto-import.sh"]
     restart: "no"
 
   hanna-bot:

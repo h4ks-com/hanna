@@ -25,7 +25,7 @@ if [ -f "$SETUP_MARKER" ]; then
     exit 0
 fi
 
-# Check if setup files exist
+# Check if setup directories exist
 SETUP_DIR="/home/node/.n8n/hanna-setup"
 if [ ! -d "$SETUP_DIR" ]; then
     echo "❌ Setup directory not found: $SETUP_DIR"
@@ -33,28 +33,36 @@ if [ ! -d "$SETUP_DIR" ]; then
 fi
 
 # Import credentials
-if [ -f "$SETUP_DIR/credentials.json" ]; then
+if [ -d "$SETUP_DIR/credentials" ] && [ "$(ls -A $SETUP_DIR/credentials/*.json 2>/dev/null)" ]; then
     echo "🔑 Importing credentials..."
-    if n8n import:credentials --input="$SETUP_DIR/credentials.json"; then
-        echo "✅ Credentials imported"
-    else
-        echo "⚠️ Credential import failed"
-    fi
+    for credential_file in $SETUP_DIR/credentials/*.json; do
+        filename=$(basename "$credential_file")
+        echo "   Importing: $filename"
+        if n8n import:credentials --input="$credential_file"; then
+            echo "   ✅ $filename imported"
+        else
+            echo "   ⚠️ Failed to import $filename"
+        fi
+    done
 else
-    echo "⚠️ No credentials file found"
+    echo "⚠️ No credential files found"
 fi
 
 # Import workflows
-if [ -f "$SETUP_DIR/workflows.json" ]; then
+if [ -d "$SETUP_DIR/workflows" ] && [ "$(ls -A $SETUP_DIR/workflows/*.json 2>/dev/null)" ]; then
     echo "⚙️ Importing workflows..."
-    if n8n import:workflow --input="$SETUP_DIR/workflows.json"; then
-        echo "✅ Workflows imported"
-        echo "ℹ️  Please activate the workflow manually in the n8n web interface"
-    else
-        echo "⚠️ Workflow import failed"
-    fi
+    for workflow_file in $SETUP_DIR/workflows/*.json; do
+        filename=$(basename "$workflow_file")
+        echo "   Importing: $filename"
+        if n8n import:workflow --input="$workflow_file"; then
+            echo "   ✅ $filename imported"
+        else
+            echo "   ⚠️ Failed to import $filename"
+        fi
+    done
+    echo "ℹ️  Please activate workflows manually in the n8n web interface"
 else
-    echo "⚠️ No workflows file found"
+    echo "⚠️ No workflow files found"
 fi
 
 # Create completion marker

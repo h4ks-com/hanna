@@ -3,12 +3,12 @@ FROM alpine:latest
 
 RUN apk add --no-cache gettext
 
-# Copy template files
-COPY examples/n8n-workflows.json /templates/workflows.json
-COPY examples/n8n-credentials.json /templates/credentials.json
+# Copy template directories
+COPY examples/workflows/ /templates/workflows/
+COPY examples/credentials/ /templates/credentials/
 
-# Copy setup script
-COPY scripts/setup-n8n-init.sh /setup.sh
-RUN chmod +x /setup.sh
+# Copy setup script (keep same name to avoid confusion)
+COPY scripts/setup-n8n-init.sh /scripts/setup-n8n-init.sh
+RUN chmod +x /scripts/setup-n8n-init.sh
 
-CMD ["/setup.sh"]
+CMD ["/scripts/setup-n8n-init.sh"]
