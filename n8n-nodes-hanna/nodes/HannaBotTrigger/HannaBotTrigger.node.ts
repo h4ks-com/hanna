@@ -15,7 +15,7 @@ export class HannaBotTrigger implements INodeType {
     name: 'hannaBotTrigger',
     icon: 'fa:comments',
     group: ['trigger'],
-    version: 2,
+    version: [1, 2],
     subtitle: '={{$parameter["events"].join(", ") || "All IRC Events"}}',
     description: 'Triggers when IRC events occur in Hanna Bot',
     defaults: {

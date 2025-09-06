@@ -1,0 +1,14 @@
+# Simple init container to setup n8n data
+FROM alpine:latest
+
+RUN apk add --no-cache gettext
+
+# Copy template files
+COPY examples/n8n-workflows.json /templates/workflows.json
+COPY examples/n8n-credentials.json /templates/credentials.json
+
+# Copy setup script
+COPY scripts/setup-n8n-init.sh /setup.sh
+RUN chmod +x /setup.sh
+
+CMD ["/setup.sh"]
