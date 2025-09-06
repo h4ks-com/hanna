@@ -13,7 +13,7 @@ export class HannaBot implements INodeType {
     name: 'hannaBot',
     icon: 'fa:comments',
     group: ['transform'],
-    version: 2,
+    version: [1, 2],
     subtitle: '={{$parameter["operation"] === "whois" ? "WHOIS: " + $parameter["whoisNick"] : $parameter["operation"] === "user" ? "User: " + $parameter["userName"] : $parameter["operation"] === "channel" ? "Channel: " + $parameter["channelName"] : $parameter["operation"] === "list" ? "List Channels" : ($parameter["operation"] === "send" || $parameter["operation"] === "notice" || $parameter["operation"] === "join" || $parameter["operation"] === "part") ? $parameter["operation"] + ": " + $parameter["target"] : $parameter["operation"] === "nick" ? "Nick: " + $parameter["nick"] : $parameter["operation"] === "raw" ? "Raw: " + $parameter["command"] : $parameter["operation"]}}',
     description: 'Interact with Hanna IRC Bot via its REST API',
     usableAsTool: true,

@@ -5,7 +5,6 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_BASIC_AUTH_ACTIVE=false
       - N8N_LOG_LEVEL=debug
       - N8N_PUSH_BACKEND=websocket
       - N8N_HOST=localhost
@@ -14,9 +13,25 @@ services:
       - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=UTC
       - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      # Set up default owner user
+      - N8N_OWNER_EMAIL=admin@hanna-bot.local
+      - N8N_OWNER_PASSWORD=${N8N_OWNER_PASSWORD:-hanna123!}
     volumes:
       - ./n8n_data:/home/node/.n8n
       - ./n8n-nodes-hanna/dist:/home/node/.n8n/custom
+
+  n8n-workflow-loader:
+    build: ./n8n-workflow-loader
+    environment:
+      - N8N_HOST=http://n8n:5678
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-secret123}
+      - N8N_OWNER_EMAIL=admin@hanna-bot.local
+      - N8N_OWNER_PASSWORD=${N8N_OWNER_PASSWORD:-hanna123!}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - n8n
+    restart: "no"
 
   hanna-bot:
     build: .
@@ -28,5 +43,7 @@ services:
     environment:
       - API_ADDR=:${API_PORT:-8080}
       - N8N_WEBHOOK=${N8N_WEBHOOK:-http://n8n:5678/webhook/irc}
+      - TRIGGER_CONFIG={"endpoints":{"n8n":{"url":"http://n8n:5678/webhook/a3297d90-6c5f-40c1-bdf1-c26e6483b450/webhook","token":"${WEBHOOK_TOKEN:-secret123}","events":["mention","privmsg"]}}}
     depends_on:
       - n8n
+      - n8n-workflow-loader
