@@ -49,9 +49,7 @@ if [ -f "$SETUP_DIR/workflows.json" ]; then
     echo "⚙️ Importing workflows..."
     if n8n import:workflow --input="$SETUP_DIR/workflows.json"; then
         echo "✅ Workflows imported"
-        # Activate the workflow
-        echo "🔄 Activating workflow..."
-        n8n update:workflow --id=1 --active=true || echo "⚠️ Failed to activate workflow"
+        echo "ℹ️  Please activate the workflow manually in the n8n web interface"
     else
         echo "⚠️ Workflow import failed"
     fi
