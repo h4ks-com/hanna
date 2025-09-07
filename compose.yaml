@@ -67,3 +67,34 @@ services:
     depends_on:
       - n8n
       - n8n-import
+
+  webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "${WEBUI_PORT:-3000}:3000"
+    environment:
+      # Server-side environment variables (not exposed to browser)
+      - HANNA_N8N_INTERNAL_ENDPOINT=http://n8n:5678/webhook/hanna-chat
+      - NODE_ENV=production
+      # Client-side environment variables (exposed to browser)
+      - NEXT_PUBLIC_HANNA_N8N_ENDPOINT=${NEXT_PUBLIC_HANNA_N8N_ENDPOINT:-http://localhost:5678/webhook/hanna-chat}
+      - NEXT_PUBLIC_APP_VERSION=2.0.0
+      - NEXT_PUBLIC_APP_NAME=HannaUI
+      # Disable Next.js telemetry
+      - NEXT_TELEMETRY_DISABLED=1
+    depends_on:
+      n8n:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webui.rule=Host(`hanna.local`)"
+      - "traefik.http.services.webui.loadbalancer.server.port=3000"
