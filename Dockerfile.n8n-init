@@ -3,6 +3,10 @@ FROM alpine:latest
 
 RUN apk add --no-cache gettext
 
+# Create node user with same UID as n8n container (1000)
+RUN addgroup --gid 1000 node && \
+    adduser --disabled-password --gecos "" --home /home/node --ingroup node --uid 1000 node
+
 # Copy template directories
 COPY examples/workflows/ /templates/workflows/
 COPY examples/credentials/ /templates/credentials/
@@ -10,5 +14,11 @@ COPY examples/credentials/ /templates/credentials/
 # Copy setup script (keep same name to avoid confusion)
 COPY scripts/setup-n8n-init.sh /scripts/setup-n8n-init.sh
 RUN chmod +x /scripts/setup-n8n-init.sh
+
+# Change ownership of all files to node user
+RUN chown -R node:node /templates /scripts
+
+# Switch to node user
+USER node
 
 CMD ["/scripts/setup-n8n-init.sh"]

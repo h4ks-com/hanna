@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.n8n-init
+    user: "1000:1000"  # Ensure same UID/GID as n8n container
     environment:
       - API_TOKEN=your-secure-api-token-here
       - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-secret123}
@@ -13,6 +14,7 @@ services:
   n8n:
     image: n8nio/n8n:latest
     restart: always
+    user: "1000:1000"  # Explicit user specification for consistency
     ports:
       - '5678:5678'
     environment:
@@ -42,6 +44,7 @@ services:
 
   n8n-import:
     image: n8nio/n8n:latest
+    user: "1000:1000"  # Explicit user specification for consistency
     environment:
       - N8N_LOG_LEVEL=debug
     volumes:
