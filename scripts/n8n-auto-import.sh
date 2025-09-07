@@ -25,11 +25,31 @@ if [ -f "$SETUP_MARKER" ]; then
     exit 0
 fi
 
-# Check if setup directories exist
+# Create setup directory and process templates
 SETUP_DIR="/home/node/.n8n/hanna-setup"
-if [ ! -d "$SETUP_DIR" ]; then
-    echo "❌ Setup directory not found: $SETUP_DIR"
-    exit 1
+mkdir -p "$SETUP_DIR/credentials" "$SETUP_DIR/workflows"
+
+echo "📋 Processing credential templates..."
+if [ -d "/templates/credentials" ] && [ "$(ls -A /templates/credentials/*.json 2>/dev/null)" ]; then
+    for credential_file in /templates/credentials/*.json; do
+        filename=$(basename "$credential_file")
+        echo "   Processing: $filename"
+        # Manual envsubst replacement for API_TOKEN
+        sed "s/\${API_TOKEN}/$API_TOKEN/g" "$credential_file" > "$SETUP_DIR/credentials/$filename"
+    done
+else
+    echo "   No credential templates found"
+fi
+
+echo "📋 Processing workflow templates..."
+if [ -d "/templates/workflows" ] && [ "$(ls -A /templates/workflows/*.json 2>/dev/null)" ]; then
+    for workflow_file in /templates/workflows/*.json; do
+        filename=$(basename "$workflow_file")
+        echo "   Processing: $filename"
+        cp "$workflow_file" "$SETUP_DIR/workflows/$filename"
+    done
+else
+    echo "   No workflow templates found"
 fi
 
 # Import credentials

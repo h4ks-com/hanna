@@ -6,7 +6,7 @@
       {
         "parameters": {
           "authToken": "=secret123",
-          "events": ["mention", "privmsg"]
+          "events": ["privmsg"]
         },
         "type": "CUSTOM.hannaBotTrigger",
         "typeVersion": 2,

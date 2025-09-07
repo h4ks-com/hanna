@@ -1,15 +1,4 @@
 services:
-  n8n-init:
-    build:
-      context: .
-      dockerfile: Dockerfile.n8n-init
-    environment:
-      - API_TOKEN=your-secure-api-token-here
-      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-secret123}
-    volumes:
-      - ./n8n_data:/data
-    restart: 'no'
-
   n8n:
     image: n8nio/n8n:latest
     restart: always
@@ -24,15 +13,9 @@ services:
       - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=UTC
       - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
-      # Set up default owner user
-      - N8N_OWNER_EMAIL=admin@hanna-bot.local
-      - N8N_OWNER_PASSWORD=${N8N_OWNER_PASSWORD:-hanna123!}
     volumes:
       - ./n8n_data:/home/node/.n8n
       - ./n8n-nodes-hanna/dist:/home/node/.n8n/custom
-    depends_on:
-      n8n-init:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:5678/healthz || exit 1"]
       interval: 5s
@@ -44,9 +27,12 @@ services:
     image: n8nio/n8n:latest
     environment:
       - N8N_LOG_LEVEL=debug
+      - API_TOKEN=${API_TOKEN:-your-secure-api-token-here}
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN:-secret123}
     volumes:
       - ./n8n_data:/home/node/.n8n
       - ./scripts/n8n-auto-import.sh:/scripts/n8n-auto-import.sh:ro
+      - ./examples/:/templates/:ro
     depends_on:
       n8n:
         condition: service_healthy
