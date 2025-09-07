@@ -4,6 +4,7 @@ services:
     restart: always
     ports:
       - '5678:5678'
+    user: "1000:1000"
     environment:
       - N8N_LOG_LEVEL=debug
       - N8N_PUSH_BACKEND=websocket
@@ -25,6 +26,7 @@ services:
 
   n8n-import:
     image: n8nio/n8n:latest
+    user: "1000:1000"
     environment:
       - N8N_LOG_LEVEL=debug
       - API_TOKEN=${API_TOKEN:-your-secure-api-token-here}
