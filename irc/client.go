@@ -816,17 +816,17 @@ func (c *Client) Dial(ctx context.Context) error {
     // Check if SASL is configured
     sasl := c.saslUser != "" && c.saslPass != ""
     
-    // Always request CAP negotiation for message-tags (and SASL if configured)
+    // Always request CAP negotiation for caps (and SASL if configured)
     log.Printf("Starting capability negotiation")
     c.raw("CAP LS 302")
     
     if sasl {
-        log.Printf("Requesting SASL and message-tags capabilities")
+        log.Printf("Requesting SASL and other caps")
         c.saslInProgress.Store(true)
-        c.raw("CAP REQ :sasl message-tags")
+        c.raw("CAP REQ :sasl message-tags account-tag server-time")
     } else {
-        log.Printf("Requesting message-tags capability")
-        c.raw("CAP REQ :message-tags")
+        log.Printf("Requesting caps")
+        c.raw("CAP REQ :message-tags account-tag server-time")
     }
 
     go c.readLoop()
