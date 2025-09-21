@@ -56,5 +56,24 @@ services:
       - n8n
       - n8n-import
 
+  hannaui:
+    build:
+      context: ./HannaUI
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "${HANNAUI_PORT:-8081}:80"
+    environment:
+      - HANNA_N8N_ENDPOINT=${HANNA_N8N_ENDPOINT:-http://localhost:5678/webhook/hanna-chat}
+      - HANNA_VERSION=${HANNA_VERSION:-1.3.0}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - n8n
+
 volumes:
   n8n_data:
