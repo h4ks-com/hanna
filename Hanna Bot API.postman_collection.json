@@ -1,0 +1,461 @@
+{
+  "info": {
+    "_postman_id": "67fd677c-1ca0-4e6d-9cdb-d30864439210",
+    "name": "Hanna Bot API",
+    "description": "Postman Collection for the Hanna IRC Bot REST API. Includes core control operations and advanced tracking/state monitoring endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "25515670"
+  },
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/health",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns bot connection status and current nickname. Does not require authentication."
+          },
+          "response": []
+        },
+        {
+          "name": "Bot State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/state",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "state"
+              ]
+            },
+            "description": "Returns comprehensive bot status including connected channels."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/stats",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "stats"
+              ]
+            },
+            "description": "Get bot statistics and metrics (tracked metrics like connection time, messages received/sent)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recent Errors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/errors",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "errors"
+              ]
+            },
+            "description": "Get recent IRC errors and operational issues encountered by the bot."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Comprehensive State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/comprehensive-state",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comprehensive-state"
+              ]
+            },
+            "description": "Get complete bot state including all known channels, users, and server configurations at once."
+          },
+          "response": []
+        }
+      ],
+      "description": "System monitoring and health endpoints."
+    },
+    {
+      "name": "Channel Management",
+      "item": [
+        {
+          "name": "Join Channel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"#example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/join",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "join"
+              ]
+            },
+            "description": "Instructs the bot to join a specific IRC channel."
+          },
+          "response": []
+        },
+        {
+          "name": "Leave Channel (Part)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"#example\",\n  \"reason\": \"Goodbye!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/part",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "part"
+              ]
+            },
+            "description": "Instructs the bot to leave an IRC channel with an optional parting reason message."
+          },
+          "response": []
+        },
+        {
+          "name": "List IRC Channels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/list",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "list"
+              ]
+            },
+            "description": "Queries and fetches a list of available IRC channels on the network including their user count and active topics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Specific Channel Info",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"#general\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/channel",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "channel"
+              ]
+            },
+            "description": "Get detailed information about a specific channel tracked by the bot (e.g., specific channel topics, user counts, modes, and active users)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Operations relating to joining, leaving, listing, or inspecting channels."
+    },
+    {
+      "name": "Messaging & Commands",
+      "item": [
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target\": \"#example\",\n  \"message\": \"Hello, world!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/send",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "send"
+              ]
+            },
+            "description": "Sends a standard chat message (PRIVMSG) to a specific target channel or individual user nickname."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Notice",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target\": \"#example\",\n  \"message\": \"This is an IRC notice message\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/notice",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "notice"
+              ]
+            },
+            "description": "Sends an IRC NOTICE text line to a targeted channel or individual user."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Nickname",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nick\": \"NewBotName\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/nick",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "nick"
+              ]
+            },
+            "description": "Dynamically updates and re-requests a new bot nickname on the IRC network."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Raw IRC Command",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"line\": \"PRIVMSG #channel :Custom raw message line\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/raw",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "raw"
+              ]
+            },
+            "description": "Sends a raw unformatted protocol command line directly downstream to the destination IRC server connection."
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints to manipulate chat strings or bot profiles."
+    },
+    {
+      "name": "Network & Users",
+      "item": [
+        {
+          "name": "Get User Info (WHOIS)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nick\": \"username\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/whois",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "whois"
+              ]
+            },
+            "description": "Triggers a live server-side WHOIS lookup request to retrieve remote user registration, idle stats, and host details."
+          },
+          "response": []
+        },
+        {
+          "name": "Get IRC Server Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/server",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "server"
+              ]
+            },
+            "description": "Retrieves the active IRC network properties, software versions, creation date, and support capability flags."
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Tracked Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/users",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            },
+            "description": "Retrieves an indexed log of all known or visible users currently cached/tracked internally by the application."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Internal Specific User Details",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nick\": \"username\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/user",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "user"
+              ]
+            },
+            "description": "Queries the bot's internal tracking storage cache directly for an explicit user record (such as away messages, idle times, and joined channels)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoints relating to user data lookups and connected server configurations."
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{API_TOKEN}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "API_TOKEN",
+      "value": "your_secret_token"
+    }
+  ]
+}
